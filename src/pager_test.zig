@@ -1,18 +1,25 @@
 const std = @import("std");
 const testing = std.testing;
+const pager = @import("pager.zig");
 
-const Node = @import("pager.zig").Node;
-const NodeHeader = @import("pager.zig").NodeHeader;
-const NodeType = @import("pager.zig").NodeType;
-const NodeBody = @import("pager.zig").NodeBody;
-const LeafNode = @import("pager.zig").LeafNode;
-const Cell = @import("pager.zig").Cell;
+const Node = pager.Node;
+const NodeHeader = pager.NodeHeader;
+const NodeType = pager.NodeType;
+const NodeBody = pager.NodeBody;
+
+const LeafNodeHeader = pager.LeafNodeHeader;
+const LeafNode = pager.LeafNode;
+const Cell = pager.Cell;
+
 const Row = @import("table.zig").Row;
 
 test "serialize node" {
-    var leaf = LeafNode{ .num_cells = LeafNode.MAX_CELLS, .cells = undefined };
+    var leaf = LeafNode{
+        .header = .{ .num_cells = LeafNode.MAX_CELLS },
+        .cells = undefined,
+    };
     for (leaf.cells) |*cell, cell_index| {
-        const row = try Row.new(@intCast(i32, cell_index), "hello", "world");
+        const row = try Row.new(@intCast(u32, cell_index), "hello", "world");
         cell.* = Cell{ .key = @intCast(u32, cell_index), .val = row };
     }
     var node = Node{
@@ -20,7 +27,7 @@ test "serialize node" {
         .body = NodeBody{ .Leaf = leaf },
     };
 
-    var buf: [@sizeOf(Node)]u8 = undefined;
+    var buf: [NodeHeader.SERIALIZED_SIZE + LeafNodeHeader.SERIALIZED_SIZE + LeafNode.SPACE_FOR_CELLS]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try node.serialize(&ostream);
 
@@ -30,13 +37,13 @@ test "serialize node" {
     try testing.expectEqual(node.header.is_root, try reader.readInt(u8, .Little));
     try testing.expectEqual(node.header.parent, try reader.readInt(u32, .Little));
     try testing.expectEqual(NodeType.Leaf, try reader.readEnum(NodeType, .Little));
-    try testing.expectEqual(node.body.Leaf.num_cells, try reader.readInt(u32, .Little));
+    try testing.expectEqual(node.body.Leaf.header.num_cells, try reader.readInt(u32, .Little));
 
     var cell_num: usize = 0;
-    while (cell_num < node.body.Leaf.num_cells) : (cell_num += 1) {
+    while (cell_num < node.body.Leaf.header.num_cells) : (cell_num += 1) {
         const cell = node.body.Leaf.cells[cell_num].?;
         try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
-        try testing.expectEqual(cell.val.id, try reader.readInt(i32, .Little));
+        try testing.expectEqual(cell.val.id, try reader.readInt(u32, .Little));
         try testing.expectEqual(cell.val.key_len, try reader.readInt(u8, .Little));
         try testing.expectEqual(cell.val.val_len, try reader.readInt(u8, .Little));
         try testing.expectEqual(cell.val.key_buf, try reader.readBytesNoEof(Row.MAX_KEY_LEN));
@@ -45,9 +52,12 @@ test "serialize node" {
 }
 
 test "deserialize node" {
-    var leaf = LeafNode{ .num_cells = LeafNode.MAX_CELLS, .cells = undefined };
+    var leaf = LeafNode{
+        .header = .{ .num_cells = LeafNode.MAX_CELLS },
+        .cells = undefined,
+    };
     for (leaf.cells) |*cell, cell_index| {
-        const row = try Row.new(@intCast(i32, cell_index), "hello", "world");
+        const row = try Row.new(@intCast(u32, cell_index), "hello", "world");
         cell.* = Cell{ .key = @intCast(u32, cell_index), .val = row };
     }
     var node = Node{
@@ -55,7 +65,7 @@ test "deserialize node" {
         .body = NodeBody{ .Leaf = leaf },
     };
 
-    var buf: [@sizeOf(Node)]u8 = undefined;
+    var buf: [NodeHeader.SERIALIZED_SIZE + LeafNodeHeader.SERIALIZED_SIZE + LeafNode.SPACE_FOR_CELLS]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try node.serialize(&ostream);
 
@@ -69,7 +79,7 @@ test "deserialize node" {
 test "serialize node header" {
     var header = NodeHeader{ .is_root = 69, .parent = 420 };
 
-    var buf: [@sizeOf(NodeHeader)]u8 = undefined;
+    var buf: [NodeHeader.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try header.serialize(&ostream);
 
@@ -83,7 +93,7 @@ test "serialize node header" {
 test "deserialize node header" {
     var header = NodeHeader{ .is_root = 69, .parent = 420 };
 
-    var buf: [@sizeOf(NodeHeader)]u8 = undefined;
+    var buf: [NodeHeader.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try header.serialize(&ostream);
 
@@ -95,14 +105,17 @@ test "deserialize node header" {
 }
 
 test "serialize node body" {
-    var leaf = LeafNode{ .num_cells = LeafNode.MAX_CELLS, .cells = undefined };
+    var leaf = LeafNode{
+        .header = .{ .num_cells = LeafNode.MAX_CELLS },
+        .cells = undefined,
+    };
     for (leaf.cells) |*cell, cell_index| {
-        const row = try Row.new(@intCast(i32, cell_index), "hello", "world");
+        const row = try Row.new(@intCast(u32, cell_index), "hello", "world");
         cell.* = Cell{ .key = @intCast(u32, cell_index), .val = row };
     }
     var body = NodeBody{ .Leaf = leaf };
 
-    var buf: [@sizeOf(LeafNode)]u8 = undefined;
+    var buf: [LeafNodeHeader.SERIALIZED_SIZE + LeafNode.SPACE_FOR_CELLS]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try body.serialize(&ostream);
 
@@ -110,13 +123,13 @@ test "serialize node body" {
     var reader = istream.reader();
 
     try testing.expectEqual(NodeType.Leaf, try reader.readEnum(NodeType, .Little));
-    try testing.expectEqual(leaf.num_cells, try reader.readInt(u32, .Little));
+    try testing.expectEqual(leaf.header.num_cells, try reader.readInt(u32, .Little));
 
     var cell_num: usize = 0;
-    while (cell_num < leaf.num_cells) : (cell_num += 1) {
+    while (cell_num < leaf.header.num_cells) : (cell_num += 1) {
         const cell = leaf.cells[cell_num].?;
         try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
-        try testing.expectEqual(cell.val.id, try reader.readInt(i32, .Little));
+        try testing.expectEqual(cell.val.id, try reader.readInt(u32, .Little));
         try testing.expectEqual(cell.val.key_len, try reader.readInt(u8, .Little));
         try testing.expectEqual(cell.val.val_len, try reader.readInt(u8, .Little));
         try testing.expectEqual(cell.val.key_buf, try reader.readBytesNoEof(Row.MAX_KEY_LEN));
@@ -125,14 +138,17 @@ test "serialize node body" {
 }
 
 test "deserialize node body" {
-    var leaf = LeafNode{ .num_cells = LeafNode.MAX_CELLS, .cells = undefined };
+    var leaf = LeafNode{
+        .header = .{ .num_cells = LeafNode.MAX_CELLS },
+        .cells = undefined,
+    };
     for (leaf.cells) |*cell, cell_index| {
-        const row = try Row.new(@intCast(i32, cell_index), "hello", "world");
+        const row = try Row.new(@intCast(u32, cell_index), "hello", "world");
         cell.* = Cell{ .key = @intCast(u32, cell_index), .val = row };
     }
     var body = NodeBody{ .Leaf = leaf };
 
-    var buf: [@sizeOf(LeafNode)]u8 = undefined;
+    var buf: [LeafNodeHeader.SERIALIZED_SIZE + LeafNode.SPACE_FOR_CELLS]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try body.serialize(&ostream);
 
@@ -144,25 +160,28 @@ test "deserialize node body" {
 }
 
 test "serialize leaf node" {
-    var leaf = LeafNode{ .num_cells = LeafNode.MAX_CELLS, .cells = undefined };
+    var leaf = LeafNode{
+        .header = .{ .num_cells = LeafNode.MAX_CELLS },
+        .cells = undefined,
+    };
     for (leaf.cells) |*cell, cell_index| {
-        const row = try Row.new(@intCast(i32, cell_index), "hello", "world");
+        const row = try Row.new(@intCast(u32, cell_index), "hello", "world");
         cell.* = Cell{ .key = @intCast(u32, cell_index), .val = row };
     }
 
-    var buf: [@sizeOf(LeafNode)]u8 = undefined;
+    var buf: [LeafNodeHeader.SERIALIZED_SIZE + LeafNode.SPACE_FOR_CELLS]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try leaf.serialize(&ostream);
 
     var istream = std.io.fixedBufferStream(&buf);
     var reader = istream.reader();
 
-    try testing.expectEqual(leaf.num_cells, try reader.readInt(u32, .Little));
+    try testing.expectEqual(leaf.header.num_cells, try reader.readInt(u32, .Little));
     var cell_num: usize = 0;
-    while (cell_num < leaf.num_cells) : (cell_num += 1) {
+    while (cell_num < leaf.header.num_cells) : (cell_num += 1) {
         const cell = leaf.cells[cell_num].?;
         try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
-        try testing.expectEqual(cell.val.id, try reader.readInt(i32, .Little));
+        try testing.expectEqual(cell.val.id, try reader.readInt(u32, .Little));
         try testing.expectEqual(cell.val.key_len, try reader.readInt(u8, .Little));
         try testing.expectEqual(cell.val.val_len, try reader.readInt(u8, .Little));
         try testing.expectEqual(cell.val.key_buf, try reader.readBytesNoEof(Row.MAX_KEY_LEN));
@@ -171,13 +190,16 @@ test "serialize leaf node" {
 }
 
 test "deserialize leaf node" {
-    var leaf = LeafNode{ .num_cells = LeafNode.MAX_CELLS, .cells = undefined };
+    var leaf = LeafNode{
+        .header = .{ .num_cells = LeafNode.MAX_CELLS },
+        .cells = undefined,
+    };
     for (leaf.cells) |*cell, cell_index| {
-        const row = try Row.new(@intCast(i32, cell_index), "hello", "world");
+        const row = try Row.new(@intCast(u32, cell_index), "hello", "world");
         cell.* = Cell{ .key = @intCast(u32, cell_index), .val = row };
     }
 
-    var buf: [@sizeOf(LeafNode)]u8 = undefined;
+    var buf: [LeafNodeHeader.SERIALIZED_SIZE + LeafNode.SPACE_FOR_CELLS]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try leaf.serialize(&ostream);
 
@@ -192,7 +214,7 @@ test "serialize cell" {
     const row = try Row.new(0x0102BEEF, "hello", "world");
     const cell = Cell{ .key = 0x0102BEEF, .val = row };
 
-    var buf: [@sizeOf(Cell)]u8 = undefined;
+    var buf: [Cell.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try cell.serialize(&ostream);
 
@@ -200,7 +222,7 @@ test "serialize cell" {
     var reader = istream.reader();
 
     try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
-    try testing.expectEqual(cell.val.id, try reader.readInt(i32, .Little));
+    try testing.expectEqual(cell.val.id, try reader.readInt(u32, .Little));
     try testing.expectEqual(cell.val.key_len, try reader.readInt(u8, .Little));
     try testing.expectEqual(cell.val.val_len, try reader.readInt(u8, .Little));
     try testing.expectEqual(cell.val.key_buf, try reader.readBytesNoEof(Row.MAX_KEY_LEN));
@@ -211,7 +233,7 @@ test "deserialize cell" {
     const row = try Row.new(0x0102BEEF, "hello", "world");
     const cell = Cell{ .key = 0x0102BEEF, .val = row };
 
-    var buf: [@sizeOf(Cell)]u8 = undefined;
+    var buf: [Cell.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try cell.serialize(&ostream);
 

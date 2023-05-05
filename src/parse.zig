@@ -35,6 +35,12 @@ pub const Parser = struct {
         }
         const command_name = self.token_prev orelse unreachable;
 
+        if (std.mem.eql(u8, command_name.lex, "btree")) {
+            return Statement{ .Command = CommandStatement.BTree };
+        }
+        if (std.mem.eql(u8, command_name.lex, "constants")) {
+            return Statement{ .Command = CommandStatement.Constants };
+        }
         if (std.mem.eql(u8, command_name.lex, "exit")) {
             return Statement{ .Command = CommandStatement.Exit };
         }
@@ -43,15 +49,14 @@ pub const Parser = struct {
 
     fn statement(self: *Self) Error!Statement {
         if (try self.match(.Select)) {
-            const row = try Row.new(0, "", "");
-            return Statement{ .Query = .{ .typ = .Select, .row = row } };
+            return Statement{ .Query = .{ .Select = .{} } };
         }
         if (try self.match(.Insert)) {
             const row_id = try self.integer();
             const row_key = try self.string();
             const row_val = try self.string();
             const row = try Row.new(row_id, row_key, row_val);
-            return Statement{ .Query = .{ .typ = .Insert, .row = row } };
+            return Statement{ .Query = .{ .Insert = .{ .row = row } } };
         }
         return Error.UnrecognizedCommand;
     }
@@ -64,11 +69,11 @@ pub const Parser = struct {
         return s[1 .. s.len - 1];
     }
 
-    fn integer(self: *Self) Error!i32 {
+    fn integer(self: *Self) Error!u32 {
         if (!try self.match(.Integer)) {
             return Error.UnexpectedToken;
         }
-        return try std.fmt.parseInt(i32, self.token_prev.?.lex, 10);
+        return try std.fmt.parseInt(u32, self.token_prev.?.lex, 10);
     }
 
     fn advance(self: *Self) Error!void {
@@ -102,14 +107,24 @@ pub const Statement = union(StatementType) {
     Query: QueryStatement,
 };
 
-pub const CommandStatement = enum { Exit };
+pub const CommandStatement = enum {
+    BTree,
+    Constants,
+    Exit,
+};
 
 pub const QueryStatementType = enum {
     Insert,
     Select,
 };
 
-pub const QueryStatement = struct {
-    typ: QueryStatementType,
+pub const QueryStatement = union(QueryStatementType) {
+    Insert: InsertQuery,
+    Select: SelectQuery,
+};
+
+pub const InsertQuery = struct {
     row: Row,
 };
+
+pub const SelectQuery = struct {};

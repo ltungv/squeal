@@ -2,8 +2,11 @@ const std = @import("std");
 const testing = std.testing;
 const tests = @import("tests.zig");
 
-const Row = @import("table.zig").Row;
+const Pager = @import("pager.zig").Pager;
+const LeafNode = @import("pager.zig").LeafNode;
+
 const Table = @import("table.zig").Table;
+const Row = @import("table.zig").Row;
 
 test "vm run .exit" {
     const filepath = try tests.randomTemporaryFilePath(testing.allocator);
@@ -135,12 +138,12 @@ test "vm shows error when table is full" {
     defer expected.deinit();
 
     var row: u32 = 0;
-    while (row < Table.MAX_ROWS + 1) : (row += 1) {
+    while (row < LeafNode.MAX_CELLS + 1) : (row += 1) {
         const statement = try std.fmt.allocPrint(testing.allocator, "insert {d} 'key{d}' 'value{d}'\n", .{ row, row, row });
         defer testing.allocator.free(statement);
         try input.appendSlice(statement);
 
-        if (row < Table.MAX_ROWS) {
+        if (row < LeafNode.MAX_CELLS) {
             try expected.appendSlice("db > Executed.\n");
         } else {
             try expected.appendSlice("db > error.TableFull\n");
@@ -162,7 +165,7 @@ test "vm keeps data on reopen after closing" {
         defer expected.deinit();
 
         var row: u32 = 0;
-        while (row < Table.MAX_ROWS) : (row += 1) {
+        while (row < 3) : (row += 1) {
             const statement = try std.fmt.allocPrint(testing.allocator, "insert {d} 'key{d}' 'value{d}'\n", .{ row, row, row });
             defer testing.allocator.free(statement);
             try input.appendSlice(statement);
@@ -181,7 +184,7 @@ test "vm keeps data on reopen after closing" {
 
         try input.appendSlice("select\n");
         var row: u32 = 0;
-        while (row < Table.MAX_ROWS) : (row += 1) {
+        while (row < 3) : (row += 1) {
             var returned_row: []u8 = undefined;
             if (row == 0) {
                 returned_row = try std.fmt.allocPrint(testing.allocator, "db > ({d}, key{d}, value{d})\n", .{ row, row, row });
@@ -197,4 +200,58 @@ test "vm keeps data on reopen after closing" {
 
         try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
     }
+}
+
+test "vm allows printing one-node btree" {
+    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    defer testing.allocator.free(filepath);
+
+    var input = std.ArrayList(u8).init(testing.allocator);
+    defer input.deinit();
+    var expected = std.ArrayList(u8).init(testing.allocator);
+    defer expected.deinit();
+
+    var row: u32 = 0;
+    while (row < 3) : (row += 1) {
+        const statement = try std.fmt.allocPrint(testing.allocator, "insert {d} 'key{d}' 'value{d}'\n", .{ row, row, row });
+        defer testing.allocator.free(statement);
+        try input.appendSlice(statement);
+        try expected.appendSlice("db > Executed.\n");
+    }
+
+    try input.appendSlice(".btree\n");
+    try expected.appendSlice("db > Tree:\n");
+    try expected.appendSlice("leaf (size 3)\n");
+    try expected.appendSlice("  - 0 : 0\n");
+    try expected.appendSlice("  - 1 : 1\n");
+    try expected.appendSlice("  - 2 : 2\n");
+
+    try input.appendSlice(".exit\n");
+    try expected.appendSlice("db > ");
+
+    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+}
+
+test "vm allows printing contants" {
+    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    defer testing.allocator.free(filepath);
+
+    var input = std.ArrayList(u8).init(testing.allocator);
+    defer input.deinit();
+    var expected = std.ArrayList(u8).init(testing.allocator);
+    defer expected.deinit();
+
+    try input.appendSlice(".constants\n");
+    try input.appendSlice(".exit\n");
+
+    try expected.appendSlice("db > Constants:\n");
+    try expected.appendSlice("ROW_SIZE: 293\n");
+    try expected.appendSlice("NODE_HEADER_SIZE: 6\n");
+    try expected.appendSlice("LEAF_NODE_HEADER_SIZE: 4\n");
+    try expected.appendSlice("LEAF_NODE_CELL_SIZE: 297\n");
+    try expected.appendSlice("LEAF_NODE_SPACE_FOR_CELLS: 4086\n");
+    try expected.appendSlice("LEAF_NODE_MAX_CELLS: 13\n");
+    try expected.appendSlice("db > ");
+
+    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }

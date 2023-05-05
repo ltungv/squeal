@@ -2,6 +2,9 @@ const std = @import("std");
 const testing = std.testing;
 const tests = @import("tests.zig");
 
+const LeafNode = @import("pager.zig").LeafNode;
+const Pager = @import("pager.zig").Pager;
+
 const Row = @import("table.zig").Row;
 const Table = @import("table.zig").Table;
 
@@ -20,14 +23,14 @@ test "creating new row fails when value is too long" {
 test "serialize row" {
     const row = try Row.new(0x0102BEEF, "hello", "world");
 
-    var buf: [@sizeOf(Row)]u8 = undefined;
+    var buf: [Row.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try row.serialize(&ostream);
 
     var istream = std.io.fixedBufferStream(&buf);
     var reader = istream.reader();
 
-    try testing.expectEqual(row.id, try reader.readInt(i32, .Little));
+    try testing.expectEqual(row.id, try reader.readInt(u32, .Little));
     try testing.expectEqual(row.key_len, try reader.readInt(u8, .Little));
     try testing.expectEqual(row.val_len, try reader.readInt(u8, .Little));
     try testing.expectEqual(row.key_buf, try reader.readBytesNoEof(Row.MAX_KEY_LEN));
@@ -37,7 +40,7 @@ test "serialize row" {
 test "deserialize row" {
     const row = try Row.new(0x0102BEEF, "hello", "world");
 
-    var buf: [@sizeOf(Row)]u8 = undefined;
+    var buf: [Row.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
     try row.serialize(&ostream);
 
@@ -65,7 +68,13 @@ test "table insert should update rows count" {
     for (rows) |*row| {
         try table.insert(row);
     }
-    try testing.expectEqual(rows.len, table.rows);
+    var num_rows: usize = 0;
+    for (table.pager.cache[0..table.pager.pages]) |nullable_page| {
+        if (nullable_page) |page| {
+            num_rows += page.body.Leaf.header.num_cells;
+        }
+    }
+    try testing.expectEqual(rows.len, num_rows);
 }
 
 test "table insert should fail when full" {
@@ -75,13 +84,13 @@ test "table insert should fail when full" {
     var table = try Table.init(testing.allocator, filepath);
     defer table.deinit();
 
-    var i: i32 = 0;
-    while (i < Table.MAX_ROWS) : (i += 1) {
+    var i: u32 = 0;
+    while (i < LeafNode.MAX_CELLS) : (i += 1) {
         const row = try Row.new(i, "hello", "world");
         try table.insert(&row);
     }
 
-    const row = try Row.new(Table.MAX_ROWS, "hello", "world");
+    const row = try Row.new(LeafNode.MAX_CELLS, "hello", "world");
     const result = table.insert(&row);
     try testing.expectError(Table.Error.TableFull, result);
 }
@@ -93,8 +102,8 @@ test "table select should should returns all available rows" {
     var table = try Table.init(testing.allocator, filepath);
     defer table.deinit();
 
-    var i: i32 = 0;
-    while (i < Table.MAX_ROWS) : (i += 1) {
+    var i: u32 = 0;
+    while (i < LeafNode.MAX_CELLS) : (i += 1) {
         const row = try Row.new(i, "hello", "world");
         try table.insert(&row);
     }
@@ -103,7 +112,7 @@ test "table select should should returns all available rows" {
     defer testing.allocator.free(rows);
 
     for (rows) |row, row_num| {
-        try testing.expectEqual(@intCast(i32, row_num), row.id);
+        try testing.expectEqual(@intCast(u32, row_num), row.id);
         try testing.expectEqualStrings("hello", row.key_buf[0..row.key_len]);
         try testing.expectEqualStrings("world", row.val_buf[0..row.val_len]);
     }
@@ -113,9 +122,9 @@ test "table persists between different runs" {
     const filepath = try tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
-    var expected: [Table.MAX_ROWS]Row = undefined;
+    var expected: [LeafNode.MAX_CELLS]Row = undefined;
     for (expected) |*row, row_num| {
-        row.* = try Row.new(@intCast(i32, row_num), "hello", "world");
+        row.* = try Row.new(@intCast(u32, row_num), "hello", "world");
     }
 
     {
