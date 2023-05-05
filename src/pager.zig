@@ -2,12 +2,13 @@ const std = @import("std");
 const errors = @import("errors.zig");
 
 const Row = @import("table.zig").Row;
+const Table = @import("table.zig").Table;
 
 pub const Pager = struct {
     allocator: std.mem.Allocator,
     len: usize,
     file: std.fs.File,
-    cache: [MAX_PAGES]?[]u8,
+    cache: [MAX_PAGES]?[]Row,
 
     pub const PAGE_SIZE = 4096;
     pub const MAX_PAGES = 100;
@@ -15,7 +16,7 @@ pub const Pager = struct {
         OutOfBound,
         NullPage,
         CurrentWorkingDirectoryUnlinked,
-    } || std.mem.Allocator.Error || std.fs.File.OpenError || std.os.PReadError || std.os.PWriteError;
+    } || std.mem.Allocator.Error || std.fs.File.OpenError || std.os.PReadError || std.os.PWriteError || errors.IoError;
 
     const Self = @This();
 
@@ -30,8 +31,8 @@ pub const Pager = struct {
         });
         const file_stat = try file.stat();
 
-        var cache: [MAX_PAGES]?[]u8 = undefined;
-        std.mem.set(?[]u8, &cache, null);
+        var cache: [MAX_PAGES]?[]Row = undefined;
+        std.mem.set(?[]Row, &cache, null);
 
         return Self{
             .allocator = allocator,
@@ -51,30 +52,43 @@ pub const Pager = struct {
         self.file.close();
     }
 
-    pub fn flush(self: *Self, page_num: usize, num_bytes: usize) Error!void {
+    pub fn flush(self: *Self, page_num: usize, num_rows: usize) Error!void {
         if (self.cache[page_num]) |page| {
-            _ = try self.file.pwriteAll(page[0..num_bytes], page_num * PAGE_SIZE);
+            var buf: [PAGE_SIZE]u8 = undefined;
+            var stream = std.io.fixedBufferStream(&buf);
+            for (page[0..num_rows]) |*row| {
+                try row.serialize(&stream);
+            }
+            _ = try self.file.pwriteAll(buf[0 .. num_rows * @sizeOf(Row)], page_num * PAGE_SIZE);
         } else {
             return Error.NullPage;
         }
     }
 
-    pub fn getPage(self: *Self, page_num: usize) Error![]u8 {
+    pub fn getPage(self: *Self, page_num: usize) Error![]Row {
         if (page_num >= MAX_PAGES) {
             return Error.OutOfBound;
         }
 
-        var page: []u8 = undefined;
+        var page: []Row = undefined;
         if (self.cache[page_num]) |p| {
             page = p;
         } else {
-            page = try self.allocator.alloc(u8, PAGE_SIZE);
+            page = try self.allocator.alloc(Row, Table.ROWS_PER_PAGE);
             var num_pages = self.len / PAGE_SIZE;
             if (self.len % PAGE_SIZE != 0) {
                 num_pages += 1;
             }
             if (page_num < num_pages) {
-                _ = try self.file.preadAll(page, page_num * PAGE_SIZE);
+                var page_buf: [PAGE_SIZE]u8 = undefined;
+                _ = try self.file.preadAll(&page_buf, page_num * PAGE_SIZE);
+                var stream = std.io.fixedBufferStream(@as([]const u8, &page_buf));
+                for (page) |*row| {
+                    row.deserialize(&stream) catch |err| switch (err) {
+                        error.EndOfStream => break,
+                        else => return err,
+                    };
+                }
             }
             self.cache[page_num] = page;
         }

@@ -28,7 +28,7 @@ pub const Table = struct {
         const num_full_pages = self.rows / ROWS_PER_PAGE;
         while (page_num < num_full_pages) : (page_num += 1) {
             if (self.pager.cache[page_num]) |page| {
-                self.pager.flush(page_num, Pager.PAGE_SIZE) catch |err| {
+                self.pager.flush(page_num, ROWS_PER_PAGE) catch |err| {
                     std.log.err("Failed to flush page {d}: {!}", .{ page_num, err });
                 };
                 self.pager.allocator.free(page);
@@ -38,7 +38,7 @@ pub const Table = struct {
         const num_additional_rows = self.rows % ROWS_PER_PAGE;
         if (num_additional_rows > 0) {
             if (self.pager.cache[page_num]) |page| {
-                self.pager.flush(page_num, num_additional_rows * @sizeOf(Row)) catch |err| {
+                self.pager.flush(page_num, num_additional_rows) catch |err| {
                     std.log.err("Failed to flush page {d}: {!}", .{ page_num, err });
                 };
                 self.pager.allocator.free(page);
@@ -52,8 +52,7 @@ pub const Table = struct {
         if (self.rows >= MAX_ROWS) return Error.TableFull;
         const cursor = self.tail();
         const row_slot = try cursor.value();
-        var stream = std.io.fixedBufferStream(row_slot);
-        try row.serialize(&stream);
+        row_slot.* = row.*;
         self.rows += 1;
     }
 
@@ -62,8 +61,7 @@ pub const Table = struct {
         var cursor = self.head();
         while (!cursor.end) {
             const row_slot = try cursor.value_view();
-            var stream = std.io.fixedBufferStream(row_slot);
-            try rows[cursor.row].deserialize(&stream);
+            rows[cursor.row] = row_slot.*;
             cursor.advance();
         }
         return rows;
@@ -143,15 +141,14 @@ pub const Cursor = struct {
 
     const Self = @This();
 
-    pub fn value(self: *const Self) Error![]u8 {
+    pub fn value(self: *const Self) Error!*Row {
         const page_num = self.row / Table.ROWS_PER_PAGE;
         const page = try self.table.pager.getPage(page_num);
         const row_offset = self.row % Table.ROWS_PER_PAGE;
-        const byte_offset = row_offset * @sizeOf(Row);
-        return page[byte_offset .. byte_offset + @sizeOf(Row)];
+        return &page[row_offset];
     }
 
-    pub fn value_view(self: *const Self) Error![]const u8 {
+    pub fn value_view(self: *const Self) Error!*const Row {
         return self.value();
     }
 
