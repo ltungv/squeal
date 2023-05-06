@@ -52,8 +52,6 @@ pub const Table = struct {
         const key_to_insert = row.id;
         var cursor = try self.find(key_to_insert);
 
-        std.debug.print("{}\n", .{cursor.end});
-
         if (cursor.cell < num_cells) {
             if (page.body.Leaf.cells[cursor.cell].key == key_to_insert) {
                 return Error.DuplicateKey;

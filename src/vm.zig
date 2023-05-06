@@ -38,7 +38,7 @@ pub const Vm = struct {
     pub fn run(self: *Self) Error!void {
         var finished = false;
         while (!finished) {
-            try self.stream.prompt();
+            try self.stream.print("db > ");
 
             var line_buf: [cli.MAX_LINE_BUFFER_SIZE]u8 = undefined;
             const line = self.stream.readln(&line_buf) catch |err| {

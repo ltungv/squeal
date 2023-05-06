@@ -1,5 +1,6 @@
 const std = @import("std");
 
+/// Returns the size of a field in a struct.
 pub fn sizeOfField(comptime T: type, comptime field: std.meta.FieldEnum(T)) usize {
     const field_info = std.meta.fieldInfo(T, field);
     if (@TypeOf(field_info) == std.builtin.Type.StructField) {

@@ -5,6 +5,8 @@ const meta = @import("meta.zig");
 const Row = @import("table.zig").Row;
 const Table = @import("table.zig").Table;
 
+/// A pager is responsible for reading and writing pages (blocks of data) to a file.
+/// Changes made on a page are not persisted until the page is flushed.
 pub const Pager = struct {
     allocator: std.mem.Allocator,
     len: usize,
@@ -12,9 +14,13 @@ pub const Pager = struct {
     pages: usize,
     cache: [MAX_PAGES]?*Node,
 
+    /// Size of each page in bytes.
     pub const PAGE_SIZE = 4096;
+
+    /// Max number of allowed pages.
     pub const MAX_PAGES = 100;
 
+    /// Error that occurs when using a pager.
     pub const Error = error{
         OutOfBound,
         NullPage,
@@ -30,7 +36,10 @@ pub const Pager = struct {
 
     const Self = @This();
 
+    /// Create a new pager backed by the given allocator and file.
     pub fn init(allocator: std.mem.Allocator, path: []const u8) Error!Self {
+        // Zig's file system API requires an absolute path, so we need to resolve it first.
+        // The user-given path can be either a absolute or relative.
         const file_path = try std.fs.path.resolve(allocator, &[_][]const u8{path});
         defer allocator.free(file_path);
 
@@ -39,13 +48,14 @@ pub const Pager = struct {
             .truncate = false,
             .exclusive = false,
         });
-        const file_stat = try file.stat();
 
-        // File must contain whole page(s)
+        // File must contain whole page(s).
+        const file_stat = try file.stat();
         if (file_stat.size % PAGE_SIZE != 0) {
             return Error.Corrupted;
         }
 
+        // Initialize all cached pages to null.
         var cache: [MAX_PAGES]?*Node = undefined;
         std.mem.set(?*Node, &cache, null);
 
@@ -58,6 +68,7 @@ pub const Pager = struct {
         };
     }
 
+    /// Deinitialize the pager. This flushes all pages to disk and frees any allocated memory.
     pub fn deinit(self: *Self) void {
         for (self.cache) |*nullable_page| {
             if (nullable_page.*) |page| {
@@ -68,17 +79,16 @@ pub const Pager = struct {
         self.file.close();
     }
 
+    /// Flush a page to disk.
     pub fn flush(self: *Self, page_num: usize) Error!void {
-        if (self.cache[page_num]) |page| {
-            var buf: [PAGE_SIZE]u8 = undefined;
-            var stream = std.io.fixedBufferStream(&buf);
-            try page.serialize(&stream);
-            _ = try self.file.pwriteAll(&buf, page_num * PAGE_SIZE);
-        } else {
-            return Error.NullPage;
-        }
+        const page = self.cache[page_num] orelse return Error.NullPage;
+        var buf: [PAGE_SIZE]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buf);
+        try page.serialize(&stream);
+        _ = try self.file.pwriteAll(&buf, page_num * PAGE_SIZE);
     }
 
+    /// Get a pointer to a cached page. If the page is not in cache, it will be read from disk.
     pub fn getPage(self: *Self, page_num: usize) Error!*Node {
         if (page_num >= MAX_PAGES) {
             return Error.OutOfBound;
@@ -89,14 +99,17 @@ pub const Pager = struct {
             page = p;
         } else {
             page = try self.allocator.create(Node);
+            self.cache[page_num] = page;
+
             const num_pages = self.len / PAGE_SIZE;
             if (page_num < num_pages) {
+                // Load page from disk if it exists.
                 var page_buf: [PAGE_SIZE]u8 = undefined;
                 _ = try self.file.preadAll(&page_buf, page_num * PAGE_SIZE);
+                // Deserialize page into its in-memory representation.
                 var stream = std.io.fixedBufferStream(@as([]const u8, &page_buf));
                 try page.deserialize(&stream);
             }
-            self.cache[page_num] = page;
 
             if (page_num >= self.pages) {
                 self.pages = page_num + 1;
