@@ -211,20 +211,19 @@ test "vm allows printing one-node btree" {
     var expected = std.ArrayList(u8).init(testing.allocator);
     defer expected.deinit();
 
-    var row: u32 = 0;
-    while (row < 3) : (row += 1) {
-        const statement = try std.fmt.allocPrint(testing.allocator, "insert {d} 'key{d}' 'value{d}'\n", .{ row, row, row });
-        defer testing.allocator.free(statement);
-        try input.appendSlice(statement);
-        try expected.appendSlice("db > Executed.\n");
-    }
-
+    try input.appendSlice("insert 3 'key' 'value'\n");
+    try input.appendSlice("insert 1 'key' 'value'\n");
+    try input.appendSlice("insert 2 'key' 'value'\n");
     try input.appendSlice(".btree\n");
+
+    try expected.appendSlice("db > Executed.\n");
+    try expected.appendSlice("db > Executed.\n");
+    try expected.appendSlice("db > Executed.\n");
     try expected.appendSlice("db > Tree:\n");
     try expected.appendSlice("leaf (size 3)\n");
-    try expected.appendSlice("  - 0 : 0\n");
-    try expected.appendSlice("  - 1 : 1\n");
-    try expected.appendSlice("  - 2 : 2\n");
+    try expected.appendSlice("  - 0 : 1\n");
+    try expected.appendSlice("  - 1 : 2\n");
+    try expected.appendSlice("  - 2 : 3\n");
 
     try input.appendSlice(".exit\n");
     try expected.appendSlice("db > ");
@@ -251,6 +250,25 @@ test "vm allows printing contants" {
     try expected.appendSlice("LEAF_NODE_CELL_SIZE: 297\n");
     try expected.appendSlice("LEAF_NODE_SPACE_FOR_CELLS: 4086\n");
     try expected.appendSlice("LEAF_NODE_MAX_CELLS: 13\n");
+    try expected.appendSlice("db > ");
+
+    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+}
+
+test "vm shows error when inserting row with duplicate id" {
+    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    defer testing.allocator.free(filepath);
+
+    var input = std.ArrayList(u8).init(testing.allocator);
+    defer input.deinit();
+    var expected = std.ArrayList(u8).init(testing.allocator);
+    defer expected.deinit();
+
+    try input.appendSlice("insert 0 'hello' 'world'\n");
+    try input.appendSlice("insert 0 'hello' 'world'\n");
+    try input.appendSlice(".exit\n");
+    try expected.appendSlice("db > Executed.\n");
+    try expected.appendSlice("db > error.DuplicateKey\n");
     try expected.appendSlice("db > ");
 
     try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);

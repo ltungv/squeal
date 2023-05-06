@@ -198,7 +198,7 @@ pub const LeafNodeHeader = struct {
 
 pub const LeafNode = struct {
     header: LeafNodeHeader,
-    cells: [MAX_CELLS]?Cell,
+    cells: [MAX_CELLS]Cell,
 
     pub const SPACE_FOR_CELLS =
         Pager.PAGE_SIZE -
@@ -210,8 +210,8 @@ pub const LeafNode = struct {
     const Self = @This();
 
     pub fn new() Self {
-        var cells: [MAX_CELLS]?Cell = undefined;
-        std.mem.set(?Cell, &cells, null);
+        var cells: [MAX_CELLS]Cell = undefined;
+        std.mem.set(Cell, &cells, std.mem.zeroInit(Cell, .{}));
         return .{
             .header = .{ .num_cells = 0 },
             .cells = cells,
@@ -222,7 +222,7 @@ pub const LeafNode = struct {
         try self.header.serialize(stream);
         var cell_index: u32 = 0;
         while (cell_index < self.header.num_cells) : (cell_index += 1) {
-            try self.cells[cell_index].?.serialize(stream);
+            try self.cells[cell_index].serialize(stream);
         }
     }
 
@@ -230,7 +230,7 @@ pub const LeafNode = struct {
         try self.header.deserialize(stream);
         var cell_index: u32 = 0;
         while (cell_index < self.header.num_cells) : (cell_index += 1) {
-            try self.cells[cell_index].?.deserialize(stream);
+            try self.cells[cell_index].deserialize(stream);
         }
     }
 };

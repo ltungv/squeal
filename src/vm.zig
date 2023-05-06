@@ -98,9 +98,7 @@ pub const Vm = struct {
                 var cell_num: usize = 0;
                 try self.stream.printf("leaf (size {d})\n", .{leaf.header.num_cells});
                 while (cell_num < leaf.header.num_cells) : (cell_num += 1) {
-                    if (leaf.cells[cell_num]) |cell| {
-                        try self.stream.printf("  - {d} : {d}\n", .{ cell_num, cell.key });
-                    }
+                    try self.stream.printf("  - {d} : {d}\n", .{ cell_num, leaf.cells[cell_num].key });
                 }
             },
         }

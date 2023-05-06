@@ -10,7 +10,10 @@ pub const Table = struct {
     pager: Pager,
     root_page: usize,
 
-    pub const Error = error{TableFull} || Pager.Error || Cursor.Error || Row.Error;
+    pub const Error = error{
+        TableFull,
+        DuplicateKey,
+    } || Pager.Error || Cursor.Error || Row.Error;
 
     const Self = @This();
 
@@ -43,8 +46,20 @@ pub const Table = struct {
 
     pub fn insert(self: *Self, row: *const Row) Error!void {
         const page = try self.pager.getPage(self.root_page);
-        if (page.body.Leaf.header.num_cells >= LeafNode.MAX_CELLS) return Error.TableFull;
-        var cursor = try self.tail();
+        const num_cells = page.body.Leaf.header.num_cells;
+        if (num_cells >= LeafNode.MAX_CELLS) return Error.TableFull;
+
+        const key_to_insert = row.id;
+        var cursor = try self.find(key_to_insert);
+
+        std.debug.print("{}\n", .{cursor.end});
+
+        if (cursor.cell < num_cells) {
+            if (page.body.Leaf.cells[cursor.cell].key == key_to_insert) {
+                return Error.DuplicateKey;
+            }
+        }
+
         try cursor.leafInsert(row.id, row);
     }
 
@@ -69,14 +84,38 @@ pub const Table = struct {
         };
     }
 
-    pub fn tail(self: *Self) Error!Cursor {
-        const page = try self.pager.getPage(self.root_page);
-        return .{
-            .table = self,
-            .page = self.root_page,
-            .cell = page.body.Leaf.header.num_cells,
-            .end = true,
-        };
+    fn find(self: *Self, key: u32) Error!Cursor {
+        const root_page = try self.pager.getPage(self.root_page);
+        switch (root_page.body) {
+            .Leaf => |leaf| {
+                const num_cells = leaf.header.num_cells;
+                var left: usize = 0;
+                var right = @as(usize, num_cells);
+                while (left < right) {
+                    const index = (left + right) / 2;
+                    const cell = leaf.cells[index];
+                    if (key == cell.key) {
+                        return .{
+                            .table = self,
+                            .page = self.root_page,
+                            .cell = index,
+                            .end = index + 1 >= num_cells,
+                        };
+                    }
+                    if (key < cell.key) {
+                        right = index;
+                    } else {
+                        left = index + 1;
+                    }
+                }
+                return .{
+                    .table = self,
+                    .page = self.root_page,
+                    .cell = left,
+                    .end = left + 1 >= num_cells,
+                };
+            },
+        }
     }
 };
 
@@ -104,7 +143,7 @@ pub const Row = struct {
     pub fn new(id: u32, key: []const u8, val: []const u8) Error!Self {
         if (key.len > MAX_KEY_LEN) return Error.KeyTooLong;
         if (val.len > MAX_VAL_LEN) return Error.ValueTooLong;
-        var row = Row{
+        var row = Self{
             .id = id,
             .key_len = @intCast(u8, key.len),
             .val_len = @intCast(u8, val.len),
@@ -147,14 +186,7 @@ pub const Cursor = struct {
 
     pub fn value(self: *const Self) Error!*Row {
         const page = try self.table.pager.getPage(self.page);
-        var cell: *Cell = undefined;
-        if (page.body.Leaf.cells[self.cell]) |*c| {
-            cell = c;
-        } else {
-            page.body.Leaf.cells[self.cell] = undefined;
-            cell = &page.body.Leaf.cells[self.cell].?;
-        }
-        return &cell.val;
+        return &page.body.Leaf.cells[self.cell].val;
     }
 
     pub fn value_view(self: *const Self) Error!*const Row {
