@@ -46,7 +46,7 @@ pub const Table = struct {
 
     pub fn insert(self: *Self, row: *const Row) Error!void {
         const page = try self.pager.getPage(self.root_page);
-        const num_cells = page.body.Leaf.header.num_cells;
+        const num_cells = page.body.Leaf.num_cells;
         if (num_cells >= LeafNode.MAX_CELLS) return Error.TableFull;
 
         const key_to_insert = row.id;
@@ -78,7 +78,7 @@ pub const Table = struct {
             .table = self,
             .page = self.root_page,
             .cell = 0,
-            .end = page.body.Leaf.header.num_cells == 0,
+            .end = page.body.Leaf.num_cells == 0,
         };
     }
 
@@ -86,7 +86,7 @@ pub const Table = struct {
         const root_page = try self.pager.getPage(self.root_page);
         switch (root_page.body) {
             .Leaf => |leaf| {
-                const num_cells = leaf.header.num_cells;
+                const num_cells = leaf.num_cells;
                 var left: usize = 0;
                 var right = @as(usize, num_cells);
                 while (left < right) {
@@ -194,12 +194,12 @@ pub const Cursor = struct {
     pub fn advance(self: *Self) Error!void {
         const page = try self.table.pager.getPage(self.page);
         self.cell += 1;
-        self.end = self.cell >= page.body.Leaf.header.num_cells;
+        self.end = self.cell >= page.body.Leaf.num_cells;
     }
 
     pub fn leafInsert(self: *Self, key: u32, val: *const Row) Error!void {
         const page = try self.table.pager.getPage(self.page);
-        const num_cells = &page.body.Leaf.header.num_cells;
+        const num_cells = &page.body.Leaf.num_cells;
         if (num_cells.* >= LeafNode.MAX_CELLS) {
             return Error.OutOfBound;
         }

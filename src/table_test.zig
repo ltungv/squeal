@@ -71,7 +71,7 @@ test "table insert should update rows count" {
     var num_rows: usize = 0;
     for (table.pager.cache[0..table.pager.pages]) |nullable_page| {
         if (nullable_page) |page| {
-            num_rows += page.body.Leaf.header.num_cells;
+            num_rows += page.body.Leaf.num_cells;
         }
     }
     try testing.expectEqual(rows.len, num_rows);

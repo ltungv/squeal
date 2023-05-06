@@ -7,9 +7,8 @@ const Statement = @import("parse.zig").Statement;
 const NodeType = @import("pager.zig").NodeType;
 const NodeHeader = @import("pager.zig").NodeHeader;
 
-const LeafNodeHeader = @import("pager.zig").LeafNodeHeader;
 const LeafNode = @import("pager.zig").LeafNode;
-const Cell = @import("pager.zig").Cell;
+const LeafNodeCell = @import("pager.zig").LeafNodeCell;
 
 const Row = @import("table.zig").Row;
 const Table = @import("table.zig").Table;
@@ -96,8 +95,8 @@ pub const Vm = struct {
         switch (page.body) {
             .Leaf => |leaf| {
                 var cell_num: usize = 0;
-                try self.stream.printf("leaf (size {d})\n", .{leaf.header.num_cells});
-                while (cell_num < leaf.header.num_cells) : (cell_num += 1) {
+                try self.stream.printf("leaf (size {d})\n", .{leaf.num_cells});
+                while (cell_num < leaf.num_cells) : (cell_num += 1) {
                     try self.stream.printf("  - {d} : {d}\n", .{ cell_num, leaf.cells[cell_num].key });
                 }
             },
@@ -108,8 +107,8 @@ pub const Vm = struct {
         try self.stream.print("Constants:\n");
         try self.stream.printf("ROW_SIZE: {d}\n", .{Row.SERIALIZED_SIZE});
         try self.stream.printf("NODE_HEADER_SIZE: {d}\n", .{NodeHeader.SERIALIZED_SIZE});
-        try self.stream.printf("LEAF_NODE_HEADER_SIZE: {d}\n", .{LeafNodeHeader.SERIALIZED_SIZE});
-        try self.stream.printf("LEAF_NODE_CELL_SIZE: {d}\n", .{Cell.SERIALIZED_SIZE});
+        try self.stream.printf("LEAF_NODE_SIZE: {d}\n", .{LeafNode.SERIALIZED_SIZE});
+        try self.stream.printf("LEAF_NODE_CELL_SIZE: {d}\n", .{LeafNodeCell.SERIALIZED_SIZE});
         try self.stream.printf("LEAF_NODE_SPACE_FOR_CELLS: {d}\n", .{LeafNode.SPACE_FOR_CELLS});
         try self.stream.printf("LEAF_NODE_MAX_CELLS: {d}\n", .{LeafNode.MAX_CELLS});
     }
