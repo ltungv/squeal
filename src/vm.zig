@@ -19,7 +19,7 @@ pub const Vm = struct {
     stream: *const cli.Stream,
     table: Table,
 
-    const Error = cli.Stream.Error || Table.Error;
+    const Error = cli.Stream.ReadError || cli.Stream.WriteError || Table.Error;
 
     const Self = @This();
 
@@ -40,11 +40,13 @@ pub const Vm = struct {
         while (!finished) {
             try self.stream.prompt();
 
-            const line = self.stream.readln(self.allocator) catch |err| {
+            var line_buf: [cli.MAX_LINE_BUFFER_SIZE]u8 = undefined;
+            const line = self.stream.readln(&line_buf) catch |err| {
                 try self.stream.eprint(err);
                 continue;
+            } orelse {
+                continue;
             };
-            defer self.allocator.free(line);
 
             var parser = Parser.new(line);
             const statement = parser.parse() catch |err| {

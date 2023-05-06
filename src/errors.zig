@@ -1,5 +1,3 @@
-pub const IoError = error{
-    EndOfStream,
-    NoSpaceLeft,
-    InvalidValue,
-};
+pub const SerializeError = error{NoSpaceLeft};
+
+pub const DeserializeError = error{ EndOfStream, InvalidValue };

@@ -1,5 +1,4 @@
 const std = @import("std");
-const ParseIntError = std.fmt.ParseIntError;
 const Tokenizer = @import("token.zig").Tokenizer;
 const Token = @import("token.zig").Token;
 const TokenType = @import("token.zig").TokenType;
@@ -13,7 +12,10 @@ pub const Parser = struct {
     pub const Error = error{
         UnrecognizedCommand,
         UnexpectedToken,
-    } || Row.Error || Tokenizer.Error || ParseIntError;
+    } ||
+        Row.Error ||
+        Tokenizer.Error ||
+        std.fmt.ParseIntError;
 
     const Self = @This();
 

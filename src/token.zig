@@ -6,9 +6,7 @@ pub const Tokenizer = struct {
     lexeme_head: usize,
     lexeme_tail: usize,
 
-    pub const Error = error{
-        UnexpectedByte,
-    };
+    pub const Error = error{UnexpectedByte};
 
     const Self = @This();
 

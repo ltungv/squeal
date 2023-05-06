@@ -10,7 +10,7 @@ pub const Table = struct {
     pager: Pager,
     root_page: usize,
 
-    pub const Error = error{TableFull} || Pager.Error || Cursor.Error || Row.Error || errors.IoError;
+    pub const Error = error{TableFull} || Pager.Error || Cursor.Error || Row.Error;
 
     const Self = @This();
 
@@ -116,7 +116,7 @@ pub const Row = struct {
         return row;
     }
 
-    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.IoError!void {
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         var writer = stream.writer();
         try writer.writeInt(u32, self.id, .Little);
         try writer.writeInt(u8, self.key_len, .Little);
@@ -125,7 +125,7 @@ pub const Row = struct {
         try writer.writeAll(&self.val_buf);
     }
 
-    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.IoError!void {
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         var reader = stream.reader();
         self.id = try reader.readInt(u32, .Little);
         self.key_len = try reader.readInt(u8, .Little);

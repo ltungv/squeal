@@ -19,8 +19,14 @@ pub const Pager = struct {
         OutOfBound,
         NullPage,
         Corrupted,
-        CurrentWorkingDirectoryUnlinked,
-    } || std.mem.Allocator.Error || std.fs.File.OpenError || std.os.PReadError || std.os.PWriteError || errors.IoError;
+    } ||
+        std.mem.Allocator.Error ||
+        std.fs.File.OpenError ||
+        std.os.PReadError ||
+        std.os.PWriteError ||
+        std.os.GetCwdError ||
+        errors.SerializeError ||
+        errors.DeserializeError;
 
     const Self = @This();
 
@@ -107,12 +113,12 @@ pub const Node = struct {
 
     const Self = @This();
 
-    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.IoError!void {
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         try self.header.serialize(stream);
         try self.body.serialize(stream);
     }
 
-    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.IoError!void {
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         try self.header.deserialize(stream);
         try self.body.deserialize(stream);
     }
@@ -129,13 +135,13 @@ pub const NodeHeader = struct {
 
     const Self = @This();
 
-    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.IoError!void {
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         var writer = stream.writer();
         try writer.writeInt(u8, self.is_root, .Little);
         try writer.writeInt(u32, self.parent, .Little);
     }
 
-    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.IoError!void {
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         var reader = stream.reader();
         self.is_root = try reader.readInt(u8, .Little);
         self.parent = try reader.readInt(u32, .Little);
@@ -149,7 +155,7 @@ pub const NodeBody = union(NodeType) {
 
     const Self = @This();
 
-    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.IoError!void {
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         var writer = stream.writer();
         switch (self.*) {
             .Leaf => {
@@ -159,7 +165,7 @@ pub const NodeBody = union(NodeType) {
         }
     }
 
-    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.IoError!void {
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         var reader = stream.reader();
         const node_type = try reader.readEnum(NodeType, .Little);
         switch (node_type) {
@@ -179,12 +185,12 @@ pub const LeafNodeHeader = struct {
 
     const Self = @This();
 
-    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.IoError!void {
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         var writer = stream.writer();
         try writer.writeInt(u32, self.num_cells, .Little);
     }
 
-    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.IoError!void {
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         var reader = stream.reader();
         self.num_cells = try reader.readInt(u32, .Little);
     }
@@ -212,7 +218,7 @@ pub const LeafNode = struct {
         };
     }
 
-    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.IoError!void {
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         try self.header.serialize(stream);
         var cell_index: u32 = 0;
         while (cell_index < self.header.num_cells) : (cell_index += 1) {
@@ -220,7 +226,7 @@ pub const LeafNode = struct {
         }
     }
 
-    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.IoError!void {
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         try self.header.deserialize(stream);
         var cell_index: u32 = 0;
         while (cell_index < self.header.num_cells) : (cell_index += 1) {
@@ -237,13 +243,13 @@ pub const Cell = struct {
 
     const Self = @This();
 
-    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.IoError!void {
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         var writer = stream.writer();
         try writer.writeInt(u32, self.key, .Little);
         try self.val.serialize(stream);
     }
 
-    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.IoError!void {
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         var reader = stream.reader();
         self.key = try reader.readInt(u32, .Little);
         try self.val.deserialize(stream);
