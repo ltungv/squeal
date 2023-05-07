@@ -100,6 +100,13 @@ pub const Vm = struct {
                     try self.stream.printf("  - {d} : {d}\n", .{ cell_num, leaf.cells[cell_num].key });
                 }
             },
+            .Internal => |internal| {
+                var cell_num: usize = 0;
+                try self.stream.printf("internal (size {d})\n", .{internal.num_keys});
+                while (cell_num < internal.num_keys) : (cell_num += 1) {
+                    try self.stream.printf("  - {d} : {d}\n", .{ cell_num, internal.cells[cell_num].key });
+                }
+            },
         }
     }
 

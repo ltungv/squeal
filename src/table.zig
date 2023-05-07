@@ -19,7 +19,7 @@ pub const Table = struct {
 
     pub fn init(allocator: std.mem.Allocator, path: []const u8) Error!Self {
         var pager = try Pager.init(allocator, path);
-        if (pager.pages == 0) {
+        if (pager.pages_len == 0) {
             const leaf = LeafNode.new();
             var root = try pager.getPage(0);
             root.body = .{ .Leaf = leaf };
@@ -32,13 +32,13 @@ pub const Table = struct {
 
     pub fn deinit(self: *Self) void {
         var page_num: usize = 0;
-        while (page_num < self.pager.pages) : (page_num += 1) {
-            if (self.pager.cache[page_num]) |page| {
+        while (page_num < self.pager.pages_len) : (page_num += 1) {
+            if (self.pager.pages[page_num]) |page| {
                 self.pager.flush(page_num) catch |err| {
                     std.log.err("Failed to flush page {d}: {!}", .{ page_num, err });
                 };
                 self.pager.allocator.destroy(page);
-                self.pager.cache[page_num] = null;
+                self.pager.pages[page_num] = null;
             }
         }
         self.pager.deinit();
@@ -113,6 +113,8 @@ pub const Table = struct {
                     .end = left + 1 >= num_cells,
                 };
             },
+            // TODO: implement multi-level key finding.
+            .Internal => unreachable,
         }
     }
 };

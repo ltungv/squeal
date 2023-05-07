@@ -11,8 +11,8 @@ pub const Pager = struct {
     allocator: std.mem.Allocator,
     len: usize,
     file: std.fs.File,
-    pages: usize,
-    cache: [MAX_PAGES]?*Node,
+    pages_len: usize,
+    pages: [MAX_PAGES]?*Node,
 
     /// Size of each page in bytes.
     pub const PAGE_SIZE = 4096;
@@ -56,21 +56,21 @@ pub const Pager = struct {
         }
 
         // Initialize all cached pages to null.
-        var cache: [MAX_PAGES]?*Node = undefined;
-        std.mem.set(?*Node, &cache, null);
+        var pages: [MAX_PAGES]?*Node = undefined;
+        std.mem.set(?*Node, &pages, null);
 
         return Self{
             .allocator = allocator,
             .len = file_stat.size,
             .file = file,
-            .pages = file_stat.size / PAGE_SIZE,
-            .cache = cache,
+            .pages_len = file_stat.size / PAGE_SIZE,
+            .pages = pages,
         };
     }
 
     /// Deinitialize the pager. This flushes all pages to disk and frees any allocated memory.
     pub fn deinit(self: *Self) void {
-        for (self.cache) |*nullable_page| {
+        for (self.pages) |*nullable_page| {
             if (nullable_page.*) |page| {
                 self.allocator.destroy(page);
                 nullable_page.* = null;
@@ -81,7 +81,7 @@ pub const Pager = struct {
 
     /// Flush a page to disk.
     pub fn flush(self: *Self, page_num: usize) Error!void {
-        const page = self.cache[page_num] orelse return Error.NullPage;
+        const page = self.pages[page_num] orelse return Error.NullPage;
         var buf: [PAGE_SIZE]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buf);
         try page.serialize(&stream);
@@ -95,11 +95,11 @@ pub const Pager = struct {
         }
 
         var page: *Node = undefined;
-        if (self.cache[page_num]) |p| {
+        if (self.pages[page_num]) |p| {
             page = p;
         } else {
             page = try self.allocator.create(Node);
-            self.cache[page_num] = page;
+            self.pages[page_num] = page;
 
             const num_pages = self.len / PAGE_SIZE;
             if (page_num < num_pages) {
@@ -111,8 +111,8 @@ pub const Pager = struct {
                 try page.deserialize(&stream);
             }
 
-            if (page_num >= self.pages) {
-                self.pages = page_num + 1;
+            if (page_num >= self.pages_len) {
+                self.pages_len = page_num + 1;
             }
         }
 
@@ -120,11 +120,14 @@ pub const Pager = struct {
     }
 };
 
+/// A B+ tree node that can be either a leaf or an internal node.
+/// Each node is a page in the file.
 pub const Node = struct {
     header: NodeHeader,
     body: NodeBody,
 
     pub const SERIALIZED_LEAF_SIZE = NodeHeader.SERIALIZED_SIZE + NodeBody.SERIALIZED_LEAF_SIZE;
+    pub const SERIALIZED_INTERNAL_SIZE = NodeHeader.SERIALIZED_SIZE + NodeBody.SERIALIZED_INTERNAL_SIZE;
 
     const Self = @This();
 
@@ -143,9 +146,7 @@ pub const NodeHeader = struct {
     parent: u32,
     is_root: u8,
 
-    pub const SERIALIZED_SIZE =
-        meta.sizeOfField(Self, .parent) +
-        meta.sizeOfField(Self, .is_root);
+    pub const SERIALIZED_SIZE = meta.sizeOfField(Self, .parent) + meta.sizeOfField(Self, .is_root);
 
     const Self = @This();
 
@@ -162,21 +163,27 @@ pub const NodeHeader = struct {
     }
 };
 
-pub const NodeType = enum(u8) { Leaf };
+pub const NodeType = enum(u8) { Leaf, Internal };
 
 pub const NodeBody = union(NodeType) {
     Leaf: LeafNode,
+    Internal: InternalNode,
 
     pub const SERIALIZED_LEAF_SIZE = @sizeOf(NodeType) + LeafNode.SERIALIZED_SIZE;
+    pub const SERIALIZED_INTERNAL_SIZE = @sizeOf(NodeType) + InternalNode.SERIALIZED_SIZE;
 
     const Self = @This();
 
     pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         var writer = stream.writer();
         switch (self.*) {
-            .Leaf => {
+            .Leaf => |leaf| {
                 try writer.writeInt(u8, @enumToInt(NodeType.Leaf), .Little);
-                try self.Leaf.serialize(stream);
+                try leaf.serialize(stream);
+            },
+            .Internal => |internal| {
+                try writer.writeInt(u8, @enumToInt(NodeType.Internal), .Little);
+                try internal.serialize(stream);
             },
         }
     }
@@ -189,6 +196,11 @@ pub const NodeBody = union(NodeType) {
                 var leaf: LeafNode = undefined;
                 try leaf.deserialize(stream);
                 self.* = .{ .Leaf = leaf };
+            },
+            .Internal => {
+                var internal: InternalNode = undefined;
+                try internal.deserialize(stream);
+                self.* = .{ .Internal = internal };
             },
         }
     }
@@ -253,5 +265,67 @@ pub const LeafNodeCell = struct {
         var reader = stream.reader();
         self.key = try reader.readInt(u32, .Little);
         try self.val.deserialize(stream);
+    }
+};
+
+pub const InternalNode = struct {
+    num_keys: u32,
+    cells: [MAX_KEYS]InternalNodeCell,
+
+    pub const SPACE_FOR_CELLS =
+        Pager.PAGE_SIZE -
+        NodeHeader.SERIALIZED_SIZE -
+        @sizeOf(NodeType) -
+        @sizeOf(u32);
+
+    pub const MAX_KEYS = SPACE_FOR_CELLS / InternalNodeCell.SERIALIZED_SIZE;
+
+    pub const SERIALIZED_SIZE = @sizeOf(u32) + InternalNodeCell.SERIALIZED_SIZE * MAX_KEYS;
+
+    const Self = @This();
+
+    pub fn new() Self {
+        var cells: [MAX_KEYS]InternalNodeCell = undefined;
+        std.mem.set(InternalNodeCell, &cells, std.mem.zeroInit(InternalNodeCell, .{}));
+        return .{ .num_keys = 0, .cells = cells };
+    }
+
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
+        var writer = stream.writer();
+        try writer.writeInt(u32, self.num_keys, .Little);
+        var cell_index: u32 = 0;
+        while (cell_index < self.num_keys) : (cell_index += 1) {
+            try self.cells[cell_index].serialize(stream);
+        }
+    }
+
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
+        var reader = stream.reader();
+        self.num_keys = try reader.readInt(u32, .Little);
+        var cell_index: u32 = 0;
+        while (cell_index < self.num_keys) : (cell_index += 1) {
+            try self.cells[cell_index].deserialize(stream);
+        }
+    }
+};
+
+pub const InternalNodeCell = struct {
+    key: u32,
+    child: u32,
+
+    pub const SERIALIZED_SIZE = meta.sizeOfField(Self, .key) + meta.sizeOfField(Self, .child);
+
+    const Self = @This();
+
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
+        var writer = stream.writer();
+        try writer.writeInt(u32, self.key, .Little);
+        try writer.writeInt(u32, self.child, .Little);
+    }
+
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
+        var reader = stream.reader();
+        self.key = try reader.readInt(u32, .Little);
+        self.child = try reader.readInt(u32, .Little);
     }
 };
