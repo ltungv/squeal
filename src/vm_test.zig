@@ -246,10 +246,15 @@ test "vm allows printing contants" {
     try expected.appendSlice("db > Constants:\n");
     try expected.appendSlice("ROW_SIZE: 293\n");
     try expected.appendSlice("NODE_HEADER_SIZE: 5\n");
+    try expected.appendSlice("NODE_TYPE_SIZE: 1\n");
     try expected.appendSlice("LEAF_NODE_SIZE: 3865\n");
     try expected.appendSlice("LEAF_NODE_CELL_SIZE: 297\n");
     try expected.appendSlice("LEAF_NODE_SPACE_FOR_CELLS: 4086\n");
     try expected.appendSlice("LEAF_NODE_MAX_CELLS: 13\n");
+    try expected.appendSlice("INTERNAL_NODE_SIZE: 4088\n");
+    try expected.appendSlice("INTERNAL_NODE_CELL_SIZE: 8\n");
+    try expected.appendSlice("INTERNAL_NODE_SPACE_FOR_CELLS: 4082\n");
+    try expected.appendSlice("INTERNAL_NODE_MAX_KEYS: 510\n");
     try expected.appendSlice("db > ");
 
     try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);

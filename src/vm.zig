@@ -7,6 +7,9 @@ const Statement = @import("parse.zig").Statement;
 const NodeType = @import("pager.zig").NodeType;
 const NodeHeader = @import("pager.zig").NodeHeader;
 
+const InternalNode = @import("pager.zig").InternalNode;
+const InternalNodeCell = @import("pager.zig").InternalNodeCell;
+
 const LeafNode = @import("pager.zig").LeafNode;
 const LeafNodeCell = @import("pager.zig").LeafNodeCell;
 
@@ -114,9 +117,14 @@ pub const Vm = struct {
         try self.stream.print("Constants:\n");
         try self.stream.printf("ROW_SIZE: {d}\n", .{Row.SERIALIZED_SIZE});
         try self.stream.printf("NODE_HEADER_SIZE: {d}\n", .{NodeHeader.SERIALIZED_SIZE});
+        try self.stream.printf("NODE_TYPE_SIZE: {d}\n", .{@sizeOf(NodeType)});
         try self.stream.printf("LEAF_NODE_SIZE: {d}\n", .{LeafNode.SERIALIZED_SIZE});
         try self.stream.printf("LEAF_NODE_CELL_SIZE: {d}\n", .{LeafNodeCell.SERIALIZED_SIZE});
         try self.stream.printf("LEAF_NODE_SPACE_FOR_CELLS: {d}\n", .{LeafNode.SPACE_FOR_CELLS});
         try self.stream.printf("LEAF_NODE_MAX_CELLS: {d}\n", .{LeafNode.MAX_CELLS});
+        try self.stream.printf("INTERNAL_NODE_SIZE: {d}\n", .{InternalNode.SERIALIZED_SIZE});
+        try self.stream.printf("INTERNAL_NODE_CELL_SIZE: {d}\n", .{InternalNodeCell.SERIALIZED_SIZE});
+        try self.stream.printf("INTERNAL_NODE_SPACE_FOR_CELLS: {d}\n", .{InternalNode.SPACE_FOR_CELLS});
+        try self.stream.printf("INTERNAL_NODE_MAX_KEYS: {d}\n", .{InternalNode.MAX_KEYS});
     }
 };

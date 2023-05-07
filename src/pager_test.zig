@@ -81,11 +81,12 @@ test "deserialize node leaf" {
 test "serialize node internal" {
     var internal = InternalNode{
         .num_keys = InternalNode.MAX_KEYS,
+        .right_child = 0,
         .cells = undefined,
     };
     for (internal.cells) |*cell, cell_index| {
+        cell.child = @intCast(u32, cell_index + 1);
         cell.key = @intCast(u32, cell_index);
-        cell.child = @intCast(u32, cell_index);
     }
     var node = Node{
         .header = NodeHeader{ .is_root = 69, .parent = 420 },
@@ -103,23 +104,25 @@ test "serialize node internal" {
     try testing.expectEqual(node.header.parent, try reader.readInt(u32, .Little));
     try testing.expectEqual(NodeType.Internal, try reader.readEnum(NodeType, .Little));
     try testing.expectEqual(node.body.Internal.num_keys, try reader.readInt(u32, .Little));
+    try testing.expectEqual(node.body.Internal.right_child, try reader.readInt(u32, .Little));
 
     var cell_num: usize = 0;
     while (cell_num < node.body.Internal.num_keys) : (cell_num += 1) {
         const cell = node.body.Internal.cells[cell_num];
-        try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
         try testing.expectEqual(cell.child, try reader.readInt(u32, .Little));
+        try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
     }
 }
 
 test "deserialize node internal" {
     var internal = InternalNode{
         .num_keys = InternalNode.MAX_KEYS,
+        .right_child = 0,
         .cells = undefined,
     };
     for (internal.cells) |*cell, cell_index| {
+        cell.child = @intCast(u32, cell_index + 1);
         cell.key = @intCast(u32, cell_index);
-        cell.child = @intCast(u32, cell_index);
     }
     var node = Node{
         .header = NodeHeader{ .is_root = 69, .parent = 420 },
@@ -223,11 +226,12 @@ test "deserialize node body leaf" {
 test "serialize node body internal" {
     var internal = InternalNode{
         .num_keys = InternalNode.MAX_KEYS,
+        .right_child = 0,
         .cells = undefined,
     };
     for (internal.cells) |*cell, cell_index| {
+        cell.child = @intCast(u32, cell_index + 1);
         cell.key = @intCast(u32, cell_index);
-        cell.child = @intCast(u32, cell_index);
     }
     var body = NodeBody{ .Internal = internal };
 
@@ -240,23 +244,25 @@ test "serialize node body internal" {
 
     try testing.expectEqual(NodeType.Internal, try reader.readEnum(NodeType, .Little));
     try testing.expectEqual(internal.num_keys, try reader.readInt(u32, .Little));
+    try testing.expectEqual(internal.right_child, try reader.readInt(u32, .Little));
 
     var cell_num: usize = 0;
     while (cell_num < internal.num_keys) : (cell_num += 1) {
         const cell = internal.cells[cell_num];
-        try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
         try testing.expectEqual(cell.child, try reader.readInt(u32, .Little));
+        try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
     }
 }
 
 test "deserialize node body internal" {
     var internal = InternalNode{
         .num_keys = InternalNode.MAX_KEYS,
+        .right_child = 0,
         .cells = undefined,
     };
     for (internal.cells) |*cell, cell_index| {
+        cell.child = @intCast(u32, cell_index + 1);
         cell.key = @intCast(u32, cell_index);
-        cell.child = @intCast(u32, cell_index);
     }
     var body = NodeBody{ .Internal = internal };
 
@@ -359,11 +365,12 @@ test "deserialize leaf node cell" {
 test "serialize internal node" {
     var internal = InternalNode{
         .num_keys = InternalNode.MAX_KEYS,
+        .right_child = 0,
         .cells = undefined,
     };
     for (internal.cells) |*cell, cell_index| {
+        cell.child = @intCast(u32, cell_index + 1);
         cell.key = @intCast(u32, cell_index);
-        cell.child = @intCast(u32, cell_index);
     }
 
     var buf: [InternalNode.SERIALIZED_SIZE]u8 = undefined;
@@ -374,22 +381,24 @@ test "serialize internal node" {
     var reader = istream.reader();
 
     try testing.expectEqual(internal.num_keys, try reader.readInt(u32, .Little));
+    try testing.expectEqual(internal.right_child, try reader.readInt(u32, .Little));
     var cell_num: usize = 0;
     while (cell_num < internal.num_keys) : (cell_num += 1) {
         const cell = internal.cells[cell_num];
-        try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
         try testing.expectEqual(cell.child, try reader.readInt(u32, .Little));
+        try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
     }
 }
 
 test "deserialize internal node" {
     var internal = InternalNode{
         .num_keys = InternalNode.MAX_KEYS,
+        .right_child = 0,
         .cells = undefined,
     };
     for (internal.cells) |*cell, cell_index| {
+        cell.child = @intCast(u32, cell_index + 1);
         cell.key = @intCast(u32, cell_index);
-        cell.child = @intCast(u32, cell_index);
     }
 
     var buf: [InternalNode.SERIALIZED_SIZE]u8 = undefined;
@@ -413,8 +422,8 @@ test "serialize internal node cell" {
     var istream = std.io.fixedBufferStream(&buf);
     var reader = istream.reader();
 
-    try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
     try testing.expectEqual(cell.child, try reader.readInt(u32, .Little));
+    try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
 }
 
 test "deserialize internal node cell" {
