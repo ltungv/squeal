@@ -128,33 +128,6 @@ test "vm run long value insert" {
     try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
-test "vm shows error when table is full" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
-    defer testing.allocator.free(filepath);
-
-    var input = std.ArrayList(u8).init(testing.allocator);
-    defer input.deinit();
-    var expected = std.ArrayList(u8).init(testing.allocator);
-    defer expected.deinit();
-
-    var row: u32 = 0;
-    while (row < LeafNode.MAX_CELLS + 1) : (row += 1) {
-        const statement = try std.fmt.allocPrint(testing.allocator, "insert {d} 'key{d}' 'value{d}'\n", .{ row, row, row });
-        defer testing.allocator.free(statement);
-        try input.appendSlice(statement);
-
-        if (row < LeafNode.MAX_CELLS) {
-            try expected.appendSlice("db > Executed.\n");
-        } else {
-            try expected.appendSlice("db > error.TableFull\n");
-        }
-    }
-    try input.appendSlice(".exit\n");
-    try expected.appendSlice("db > ");
-
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
-}
-
 test "vm keeps data on reopen after closing" {
     const filepath = try tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
@@ -220,10 +193,10 @@ test "vm allows printing one-node btree" {
     try expected.appendSlice("db > Executed.\n");
     try expected.appendSlice("db > Executed.\n");
     try expected.appendSlice("db > Tree:\n");
-    try expected.appendSlice("leaf (size 3)\n");
-    try expected.appendSlice("  - 0 : 1\n");
-    try expected.appendSlice("  - 1 : 2\n");
-    try expected.appendSlice("  - 2 : 3\n");
+    try expected.appendSlice("- leaf (size 3)\n");
+    try expected.appendSlice("    - 1\n");
+    try expected.appendSlice("    - 2\n");
+    try expected.appendSlice("    - 3\n");
 
     try input.appendSlice(".exit\n");
     try expected.appendSlice("db > ");
@@ -247,9 +220,9 @@ test "vm allows printing contants" {
     try expected.appendSlice("ROW_SIZE: 293\n");
     try expected.appendSlice("NODE_HEADER_SIZE: 5\n");
     try expected.appendSlice("NODE_TYPE_SIZE: 1\n");
-    try expected.appendSlice("LEAF_NODE_SIZE: 3865\n");
+    try expected.appendSlice("LEAF_NODE_SIZE: 3869\n");
     try expected.appendSlice("LEAF_NODE_CELL_SIZE: 297\n");
-    try expected.appendSlice("LEAF_NODE_SPACE_FOR_CELLS: 4086\n");
+    try expected.appendSlice("LEAF_NODE_SPACE_FOR_CELLS: 4082\n");
     try expected.appendSlice("LEAF_NODE_MAX_CELLS: 13\n");
     try expected.appendSlice("INTERNAL_NODE_SIZE: 4088\n");
     try expected.appendSlice("INTERNAL_NODE_CELL_SIZE: 8\n");

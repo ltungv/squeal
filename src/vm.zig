@@ -66,7 +66,10 @@ pub const Vm = struct {
     fn exec(self: *Self, statement: *const Statement) Error!bool {
         switch (statement.*) {
             .Command => |command| switch (command) {
-                .BTree => try self.printTree(),
+                .BTree => {
+                    try self.stream.print("Tree:\n");
+                    try self.printTree(self.table.root_page, 0);
+                },
                 .Constants => try self.printConstants(),
                 .Exit => return true,
             },
@@ -92,23 +95,38 @@ pub const Vm = struct {
         return false;
     }
 
-    fn printTree(self: *Self) Error!void {
-        try self.stream.print("Tree:\n");
-        const page = try self.table.pager.getPage(self.table.root_page);
+    fn printIndentation(self: *Self, level: usize) Error!void {
+        var i = level;
+        while (i > 0) : (i -= 1) {
+            try self.stream.print("  ");
+        }
+    }
+
+    fn printTree(self: *Self, page_num: u32, indentation: usize) Error!void {
+        const page = try self.table.pager.getPage(page_num);
         switch (page.body) {
             .Leaf => |leaf| {
-                var cell_num: usize = 0;
-                try self.stream.printf("leaf (size {d})\n", .{leaf.num_cells});
+                try self.printIndentation(indentation);
+                try self.stream.printf("- leaf (size {d})\n", .{leaf.num_cells});
+
+                var cell_num: u32 = 0;
                 while (cell_num < leaf.num_cells) : (cell_num += 1) {
-                    try self.stream.printf("  - {d} : {d}\n", .{ cell_num, leaf.cells[cell_num].key });
+                    try self.printIndentation(indentation + 1);
+                    try self.stream.printf("  - {d}\n", .{leaf.cells[cell_num].key});
                 }
             },
             .Internal => |internal| {
-                var cell_num: usize = 0;
-                try self.stream.printf("internal (size {d})\n", .{internal.num_keys});
+                try self.printIndentation(indentation);
+                try self.stream.printf("- internal (size {d})\n", .{internal.num_keys});
+
+                var cell_num: u32 = 0;
                 while (cell_num < internal.num_keys) : (cell_num += 1) {
-                    try self.stream.printf("  - {d} : {d}\n", .{ cell_num, internal.cells[cell_num].key });
+                    const cell = internal.cells[cell_num];
+                    try self.printTree(cell.child, indentation + 1);
+                    try self.printIndentation(indentation + 1);
+                    try self.stream.printf("- key {d}\n", .{cell.key});
                 }
+                try self.printTree(internal.right_child, indentation + 1);
             },
         }
     }

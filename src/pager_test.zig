@@ -18,6 +18,7 @@ const Row = @import("table.zig").Row;
 test "serialize node leaf" {
     var leaf = LeafNode{
         .num_cells = LeafNode.MAX_CELLS,
+        .next_leaf = 420,
         .cells = undefined,
     };
     for (leaf.cells) |*cell, cell_index| {
@@ -40,8 +41,9 @@ test "serialize node leaf" {
     try testing.expectEqual(node.header.parent, try reader.readInt(u32, .Little));
     try testing.expectEqual(NodeType.Leaf, try reader.readEnum(NodeType, .Little));
     try testing.expectEqual(node.body.Leaf.num_cells, try reader.readInt(u32, .Little));
+    try testing.expectEqual(node.body.Leaf.next_leaf, try reader.readInt(u32, .Little));
 
-    var cell_num: usize = 0;
+    var cell_num: u32 = 0;
     while (cell_num < node.body.Leaf.num_cells) : (cell_num += 1) {
         const cell = node.body.Leaf.cells[cell_num];
         try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
@@ -56,6 +58,7 @@ test "serialize node leaf" {
 test "deserialize node leaf" {
     var leaf = LeafNode{
         .num_cells = LeafNode.MAX_CELLS,
+        .next_leaf = 420,
         .cells = undefined,
     };
     for (leaf.cells) |*cell, cell_index| {
@@ -106,7 +109,7 @@ test "serialize node internal" {
     try testing.expectEqual(node.body.Internal.num_keys, try reader.readInt(u32, .Little));
     try testing.expectEqual(node.body.Internal.right_child, try reader.readInt(u32, .Little));
 
-    var cell_num: usize = 0;
+    var cell_num: u32 = 0;
     while (cell_num < node.body.Internal.num_keys) : (cell_num += 1) {
         const cell = node.body.Internal.cells[cell_num];
         try testing.expectEqual(cell.child, try reader.readInt(u32, .Little));
@@ -171,6 +174,7 @@ test "deserialize node header" {
 test "serialize node body leaf" {
     var leaf = LeafNode{
         .num_cells = LeafNode.MAX_CELLS,
+        .next_leaf = 420,
         .cells = undefined,
     };
     for (leaf.cells) |*cell, cell_index| {
@@ -188,8 +192,9 @@ test "serialize node body leaf" {
 
     try testing.expectEqual(NodeType.Leaf, try reader.readEnum(NodeType, .Little));
     try testing.expectEqual(leaf.num_cells, try reader.readInt(u32, .Little));
+    try testing.expectEqual(leaf.next_leaf, try reader.readInt(u32, .Little));
 
-    var cell_num: usize = 0;
+    var cell_num: u32 = 0;
     while (cell_num < leaf.num_cells) : (cell_num += 1) {
         const cell = leaf.cells[cell_num];
         try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
@@ -204,6 +209,7 @@ test "serialize node body leaf" {
 test "deserialize node body leaf" {
     var leaf = LeafNode{
         .num_cells = LeafNode.MAX_CELLS,
+        .next_leaf = 420,
         .cells = undefined,
     };
     for (leaf.cells) |*cell, cell_index| {
@@ -246,7 +252,7 @@ test "serialize node body internal" {
     try testing.expectEqual(internal.num_keys, try reader.readInt(u32, .Little));
     try testing.expectEqual(internal.right_child, try reader.readInt(u32, .Little));
 
-    var cell_num: usize = 0;
+    var cell_num: u32 = 0;
     while (cell_num < internal.num_keys) : (cell_num += 1) {
         const cell = internal.cells[cell_num];
         try testing.expectEqual(cell.child, try reader.readInt(u32, .Little));
@@ -280,6 +286,7 @@ test "deserialize node body internal" {
 test "serialize leaf node" {
     var leaf = LeafNode{
         .num_cells = LeafNode.MAX_CELLS,
+        .next_leaf = 420,
         .cells = undefined,
     };
     for (leaf.cells) |*cell, cell_index| {
@@ -295,7 +302,9 @@ test "serialize leaf node" {
     var reader = istream.reader();
 
     try testing.expectEqual(leaf.num_cells, try reader.readInt(u32, .Little));
-    var cell_num: usize = 0;
+    try testing.expectEqual(leaf.next_leaf, try reader.readInt(u32, .Little));
+
+    var cell_num: u32 = 0;
     while (cell_num < leaf.num_cells) : (cell_num += 1) {
         const cell = leaf.cells[cell_num];
         try testing.expectEqual(cell.key, try reader.readInt(u32, .Little));
@@ -310,6 +319,7 @@ test "serialize leaf node" {
 test "deserialize leaf node" {
     var leaf = LeafNode{
         .num_cells = LeafNode.MAX_CELLS,
+        .next_leaf = 420,
         .cells = undefined,
     };
     for (leaf.cells) |*cell, cell_index| {
@@ -382,7 +392,7 @@ test "serialize internal node" {
 
     try testing.expectEqual(internal.num_keys, try reader.readInt(u32, .Little));
     try testing.expectEqual(internal.right_child, try reader.readInt(u32, .Little));
-    var cell_num: usize = 0;
+    var cell_num: u32 = 0;
     while (cell_num < internal.num_keys) : (cell_num += 1) {
         const cell = internal.cells[cell_num];
         try testing.expectEqual(cell.child, try reader.readInt(u32, .Little));

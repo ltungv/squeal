@@ -9,9 +9,9 @@ const Table = @import("table.zig").Table;
 /// Changes made on a page are not persisted until the page is flushed.
 pub const Pager = struct {
     allocator: std.mem.Allocator,
-    len: usize,
+    len: u32,
     file: std.fs.File,
-    pages_len: usize,
+    pages_len: u32,
     pages: [MAX_PAGES]?*Node,
 
     /// Size of each page in bytes.
@@ -51,7 +51,8 @@ pub const Pager = struct {
 
         // File must contain whole page(s).
         const file_stat = try file.stat();
-        if (file_stat.size % PAGE_SIZE != 0) {
+        const file_size = @intCast(u32, file_stat.size);
+        if (file_size % PAGE_SIZE != 0) {
             return Error.Corrupted;
         }
 
@@ -61,9 +62,9 @@ pub const Pager = struct {
 
         return Self{
             .allocator = allocator,
-            .len = file_stat.size,
+            .len = file_size,
             .file = file,
-            .pages_len = file_stat.size / PAGE_SIZE,
+            .pages_len = file_size / PAGE_SIZE,
             .pages = pages,
         };
     }
@@ -80,7 +81,7 @@ pub const Pager = struct {
     }
 
     /// Flush a page to disk.
-    pub fn flush(self: *Self, page_num: usize) Error!void {
+    pub fn flush(self: *Self, page_num: u32) Error!void {
         const page = self.pages[page_num] orelse return Error.NullPage;
         var buf: [PAGE_SIZE]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buf);
@@ -89,7 +90,7 @@ pub const Pager = struct {
     }
 
     /// Get a pointer to a cached page. If the page is not in cache, it will be read from disk.
-    pub fn getPage(self: *Self, page_num: usize) Error!*Node {
+    pub fn getPage(self: *Self, page_num: u32) Error!*Node {
         if (page_num >= MAX_PAGES) {
             return Error.OutOfBound;
         }
@@ -118,6 +119,10 @@ pub const Pager = struct {
 
         return page;
     }
+
+    pub fn getUnusedPage(self: *const Self) u32 {
+        return self.pages_len;
+    }
 };
 
 /// A B+ tree node that can be either a leaf or an internal node.
@@ -131,15 +136,9 @@ pub const Node = struct {
 
     const Self = @This();
 
-    pub fn newLeaf(is_root: u8, parent: u32) Self {
+    pub fn new(node_type: NodeType, is_root: u8, parent: u32) Self {
         const header = NodeHeader{ .is_root = is_root, .parent = parent };
-        const body = NodeBody.newLeaf();
-        return .{ .header = header, .body = body };
-    }
-
-    pub fn newInternal(is_root: u8, parent: u32) Self {
-        const header = NodeHeader{ .is_root = is_root, .parent = parent };
-        const body = NodeBody.newInternal();
+        const body = NodeBody.new(node_type);
         return .{ .header = header, .body = body };
     }
 
@@ -151,6 +150,10 @@ pub const Node = struct {
     pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         try self.header.deserialize(stream);
         try self.body.deserialize(stream);
+    }
+
+    pub fn getMaxKey(self: *const Self) u32 {
+        return self.body.getMaxKey();
     }
 };
 
@@ -186,14 +189,11 @@ pub const NodeBody = union(NodeType) {
 
     const Self = @This();
 
-    pub fn newLeaf() Self {
-        const leaf = LeafNode.new();
-        return .{ .Leaf = leaf };
-    }
-
-    pub fn newInternal() Self {
-        const internal = LeafNode.new();
-        return .{ .Internal = internal };
+    pub fn new(node_type: NodeType) Self {
+        return switch (node_type) {
+            .Leaf => .{ .Leaf = LeafNode.new() },
+            .Internal => .{ .Internal = InternalNode.new() },
+        };
     }
 
     pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
@@ -226,33 +226,42 @@ pub const NodeBody = union(NodeType) {
             },
         }
     }
+
+    pub fn getMaxKey(self: *const Self) u32 {
+        return switch (self.*) {
+            .Leaf => |leaf| leaf.getMaxKey(),
+            .Internal => |internal| internal.getMaxKey(),
+        };
+    }
 };
 
 pub const LeafNode = struct {
     num_cells: u32,
+    next_leaf: u32,
     cells: [MAX_CELLS]LeafNodeCell,
 
     pub const SPACE_FOR_CELLS =
         Pager.PAGE_SIZE -
         NodeHeader.SERIALIZED_SIZE -
         @sizeOf(NodeType) -
-        @sizeOf(u32);
+        @sizeOf(u32) * 2;
 
     pub const MAX_CELLS = SPACE_FOR_CELLS / LeafNodeCell.SERIALIZED_SIZE;
+    pub const R_SPLIT_CELLS = (MAX_CELLS + 1) / 2;
+    pub const L_SPLIT_CELLS = (MAX_CELLS + 1) - R_SPLIT_CELLS;
 
-    pub const SERIALIZED_SIZE = @sizeOf(u32) + LeafNodeCell.SERIALIZED_SIZE * MAX_CELLS;
+    pub const SERIALIZED_SIZE = @sizeOf(u32) * 2 + LeafNodeCell.SERIALIZED_SIZE * MAX_CELLS;
 
     const Self = @This();
 
     pub fn new() Self {
-        var cells: [MAX_CELLS]LeafNodeCell = undefined;
-        std.mem.set(LeafNodeCell, &cells, std.mem.zeroInit(LeafNodeCell, .{}));
-        return .{ .num_cells = 0, .cells = cells };
+        return std.mem.zeroInit(Self, .{});
     }
 
     pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         var writer = stream.writer();
         try writer.writeInt(u32, self.num_cells, .Little);
+        try writer.writeInt(u32, self.next_leaf, .Little);
         var cell_index: u32 = 0;
         while (cell_index < self.num_cells) : (cell_index += 1) {
             try self.cells[cell_index].serialize(stream);
@@ -262,10 +271,28 @@ pub const LeafNode = struct {
     pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         var reader = stream.reader();
         self.num_cells = try reader.readInt(u32, .Little);
+        self.next_leaf = try reader.readInt(u32, .Little);
         var cell_index: u32 = 0;
         while (cell_index < self.num_cells) : (cell_index += 1) {
             try self.cells[cell_index].deserialize(stream);
         }
+    }
+
+    pub fn find(self: *const Self, key: u32) u32 {
+        const num_cells = self.num_cells;
+        var left: u32 = 0;
+        var right = num_cells;
+        while (left < right) {
+            const index = (left + right) / 2;
+            const cell = self.cells[index];
+            if (key == cell.key) return index;
+            if (key < cell.key) right = index else left = index + 1;
+        }
+        return left;
+    }
+
+    pub fn getMaxKey(self: *const Self) u32 {
+        return self.cells[self.num_cells - 1].key;
     }
 };
 
@@ -308,9 +335,7 @@ pub const InternalNode = struct {
     const Self = @This();
 
     pub fn new() Self {
-        var cells: [MAX_KEYS]InternalNodeCell = undefined;
-        std.mem.set(InternalNodeCell, &cells, std.mem.zeroInit(InternalNodeCell, .{}));
-        return .{ .num_keys = 0, .cells = cells };
+        return std.mem.zeroInit(Self, .{});
     }
 
     pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
@@ -331,6 +356,35 @@ pub const InternalNode = struct {
         while (cell_index < self.num_keys) : (cell_index += 1) {
             try self.cells[cell_index].deserialize(stream);
         }
+    }
+
+    pub fn getChild(self: *const Self, index: u32) u32 {
+        if (index == self.num_keys) return self.right_child;
+        return self.cells[index].child;
+    }
+
+    pub fn find(self: *const Self, key: u32) u32 {
+        var left: u32 = 0;
+        var right = self.num_keys;
+        while (left < right) {
+            const index = (left + right) / 2;
+            const cell = self.cells[index];
+            if (key <= cell.key) {
+                right = index;
+            } else {
+                left = index + 1;
+            }
+        }
+        return left;
+    }
+
+    pub fn updateKey(self: *Self, old_key: u32, new_key: u32) void {
+        const old_child_index = self.find(old_key);
+        self.cells[old_child_index].key = new_key;
+    }
+
+    pub fn getMaxKey(self: *const Self) u32 {
+        return self.cells[self.num_keys - 1].key;
     }
 };
 

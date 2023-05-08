@@ -68,31 +68,16 @@ test "table insert should update rows count" {
     for (rows) |*row| {
         try table.insert(row);
     }
-    var num_rows: usize = 0;
+    var num_rows: u32 = 0;
     for (table.pager.pages[0..table.pager.pages_len]) |nullable_page| {
         if (nullable_page) |page| {
-            num_rows += page.body.Leaf.num_cells;
+            switch (page.body) {
+                .Leaf => |*leaf| num_rows += leaf.num_cells,
+                .Internal => {},
+            }
         }
     }
     try testing.expectEqual(rows.len, num_rows);
-}
-
-test "table insert should fail when full" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
-    defer testing.allocator.free(filepath);
-
-    var table = try Table.init(testing.allocator, filepath);
-    defer table.deinit();
-
-    var i: u32 = 0;
-    while (i < LeafNode.MAX_CELLS) : (i += 1) {
-        const row = try Row.new(i, "hello", "world");
-        try table.insert(&row);
-    }
-
-    const row = try Row.new(LeafNode.MAX_CELLS, "hello", "world");
-    const result = table.insert(&row);
-    try testing.expectError(Table.Error.TableFull, result);
 }
 
 test "table select should should returns all available rows" {
