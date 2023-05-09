@@ -9,8 +9,9 @@ const LeafNode = @import("pager.zig").LeafNode;
 const LeafNodeCell = @import("pager.zig").LeafNodeCell;
 const InternalNode = @import("pager.zig").InternalNode;
 
-/// A table is a collection of persistent rows. Data is stored in a B+ tree structure
-/// for fast lookups.
+/// A table is a collection of persistent rows stored in a B+ tree structure
+/// for fast lookups. Rows are stored in pages, which are managed by a pager
+/// that caches pages and flushes them to disk when needed.
 pub const Table = struct {
     pager: Pager,
     root_page: u32,
@@ -26,8 +27,8 @@ pub const Table = struct {
     /// Initialize a new table backed by the given allocator and the file at the given path.
     pub fn init(allocator: std.mem.Allocator, path: []const u8) Error!Self {
         var pager = try Pager.init(allocator, path);
-        // If the file is empty, the data is newly created.
         if (pager.pages_len == 0) {
+            // The file is newly created so we initialize a new table by making a new root node.
             var root = try pager.getPage(0);
             root.* = Node.new(.Leaf, 1, 0);
         }
@@ -41,8 +42,8 @@ pub const Table = struct {
     pub fn deinit(self: *Self) void {
         var page_num: u32 = 0;
         while (page_num < self.pager.pages_len) : (page_num += 1) {
-            // Flush any non-null page cache and deallocate its memory.
             if (self.pager.pages[page_num]) |page| {
+                // Flush any non-null page cache and deallocate its memory.
                 self.pager.flush(page_num) catch |err| {
                     std.log.err("Failed to flush page {d}: {!}", .{ page_num, err });
                 };
@@ -57,14 +58,14 @@ pub const Table = struct {
 
     /// Insert a new row into the table. Changes are not persisted until the page is flushed.
     pub fn insert(self: *Self, row: *const Row) Error!void {
+        // Find the leaf page where the row should be inserted.
         var cursor = try self.find(self.root_page, row.id);
         const page = try self.pager.getPage(cursor.page);
         const leaf = &page.body.Leaf;
 
-        if (cursor.cell < leaf.num_cells) {
-            if (leaf.cells[cursor.cell].key == row.id) {
-                return Error.DuplicateKey;
-            }
+        if (cursor.cell < leaf.num_cells and leaf.cells[cursor.cell].key == row.id) {
+            // The previously allocated row has the same id as the new row.
+            return Error.DuplicateKey;
         }
         try cursor.leafInsert(row.id, row);
     }
@@ -74,6 +75,7 @@ pub const Table = struct {
         var rows = std.ArrayList(Row).init(allocator);
         var cursor = try self.head();
         while (!cursor.end) {
+            // Copy each row and put it in the ArrayList.
             const row_slot = try cursor.value_view();
             try rows.append(row_slot.*);
             try cursor.advance();
@@ -81,8 +83,11 @@ pub const Table = struct {
         return rows.toOwnedSlice();
     }
 
-    /// Get the cursor to the first row in the table.
+    /// Get a cursor to the first row in the table.
     pub fn head(self: *Self) Error!Cursor {
+        // Find with key == 0 ensured that cursor return the cell
+        // having the lowest key which also contains the first row
+        // of the table.
         const cursor = try self.find(self.root_page, 0);
         const page = try self.pager.getPage(cursor.page);
         const leaf = &page.body.Leaf;
@@ -94,6 +99,7 @@ pub const Table = struct {
         };
     }
 
+    /// Get a cursor to a row in the table.
     fn find(self: *Self, page_num: u32, key: u32) Error!Cursor {
         const page = try self.pager.getPage(page_num);
         switch (page.body) {
@@ -115,6 +121,8 @@ pub const Table = struct {
     }
 
     fn createNewRoot(self: *Self, root_page: *Node, r_child_page: *Node, r_child_page_num: u32) Error!void {
+        // allocate a new page for the left child and copy the current root page into it.
+        // the current root page contains the left child page result from a previous split.
         const l_child_page_num = self.pager.getUnusedPage();
         const l_child_page = try self.pager.getPage(l_child_page_num);
         l_child_page.* = root_page.*;
@@ -123,6 +131,7 @@ pub const Table = struct {
         r_child_page.header.is_root = 0;
         r_child_page.header.parent = self.root_page;
 
+        // initialize a new internal note at the root page pointing the left and right child.
         const new_root = Node.new(.Internal, 1, 0);
         const root_body = &root_page.body.Internal;
         root_body.num_keys = 1;
@@ -135,9 +144,11 @@ pub const Table = struct {
     fn leafInsert(self: *Self, page: *Node, cell_num: u32, key: u32, val: *const Row) Error!void {
         const leaf = &page.body.Leaf;
         if (leaf.num_cells >= LeafNode.MAX_CELLS) {
+            // Leaf is full so we split.
             return self.leafSplitInsert(page, cell_num, key, val);
         }
 
+        // copy cells after the insertion point backward one slot, leaving room at cell_num.
         if (cell_num < leaf.num_cells) {
             var idx = leaf.num_cells;
             while (idx > cell_num) : (idx -= 1) {

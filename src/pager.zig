@@ -370,11 +370,7 @@ pub const InternalNode = struct {
         while (left < right) {
             const index = (left + right) / 2;
             const cell = self.cells[index];
-            if (key <= cell.key) {
-                right = index;
-            } else {
-                left = index + 1;
-            }
+            if (key <= cell.key) right = index else left = index + 1;
         }
         return left;
     }
