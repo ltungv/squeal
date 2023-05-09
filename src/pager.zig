@@ -38,7 +38,7 @@ pub const Pager = struct {
 
     /// Create a new pager backed by the given allocator and file.
     pub fn init(allocator: std.mem.Allocator, path: []const u8) Error!Self {
-        // Zig's file system API requires an absolute path, so we need to resolve it first.
+        // Zig's file system API requires an absolute path, so we need to resolve first.
         // The user-given path can be either a absolute or relative.
         const file_path = try std.fs.path.resolve(allocator, &[_][]const u8{path});
         defer allocator.free(file_path);
@@ -100,8 +100,6 @@ pub const Pager = struct {
             page = p;
         } else {
             page = try self.allocator.create(Node);
-            self.pages[page_num] = page;
-
             const num_pages = self.len / PAGE_SIZE;
             if (page_num < num_pages) {
                 // Load page from disk if it exists.
@@ -115,6 +113,7 @@ pub const Pager = struct {
             if (page_num >= self.pages_len) {
                 self.pages_len = page_num + 1;
             }
+            self.pages[page_num] = page;
         }
 
         return page;
@@ -329,6 +328,8 @@ pub const InternalNode = struct {
         @sizeOf(u32) * 2;
 
     pub const MAX_KEYS = SPACE_FOR_CELLS / InternalNodeCell.SERIALIZED_SIZE;
+    pub const R_SPLIT_KEYS = (MAX_KEYS + 1) / 2;
+    pub const L_SPLIT_KEYS = (MAX_KEYS + 1) - R_SPLIT_KEYS;
 
     pub const SERIALIZED_SIZE = @sizeOf(u32) * 2 + InternalNodeCell.SERIALIZED_SIZE * MAX_KEYS;
 
