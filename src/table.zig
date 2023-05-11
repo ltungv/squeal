@@ -8,6 +8,7 @@ const NodeHeader = @import("pager.zig").NodeHeader;
 const LeafNode = @import("pager.zig").LeafNode;
 const LeafNodeCell = @import("pager.zig").LeafNodeCell;
 const InternalNode = @import("pager.zig").InternalNode;
+const InternalNodeCell = @import("pager.zig").InternalNodeCell;
 
 /// A table is a collection of persistent rows stored in a B+ tree structure
 /// for fast lookups. Rows are stored in pages, which are managed by a pager
@@ -40,15 +41,15 @@ pub const Table = struct {
 
     /// Deinitialize the table by flusing all pages into disk and deallocating any allocated memory.
     pub fn deinit(self: *Self) void {
-        var page_num: u32 = 0;
-        while (page_num < self.pager.pages_len) : (page_num += 1) {
-            if (self.pager.pages[page_num]) |page| {
+        var page: u32 = 0;
+        while (page < self.pager.pages_len) : (page += 1) {
+            if (self.pager.pages[page]) |page_node| {
                 // Flush any non-null page cache and deallocate its memory.
-                self.pager.flush(page_num) catch |err| {
-                    std.log.err("Failed to flush page {d}: {!}", .{ page_num, err });
+                self.pager.flush(page) catch |err| {
+                    std.log.err("Failed to flush page {d}: {!}", .{ page, err });
                 };
-                self.pager.allocator.destroy(page);
-                self.pager.pages[page_num] = null;
+                self.pager.allocator.destroy(page_node);
+                self.pager.pages[page] = null;
             }
         }
 
@@ -60,8 +61,8 @@ pub const Table = struct {
     pub fn insert(self: *Self, row: *const Row) Error!void {
         // Find the leaf page where the row should be inserted.
         var cursor = try self.find(self.root_page, row.id);
-        const page = try self.pager.getPage(cursor.page);
-        const leaf = &page.body.Leaf;
+        const page_node = try self.pager.getPage(cursor.page);
+        const leaf = &page_node.body.Leaf;
 
         if (cursor.cell < leaf.num_cells and leaf.cells[cursor.cell].key == row.id) {
             // The previously allocated row has the same id as the new row.
@@ -89,8 +90,8 @@ pub const Table = struct {
         // having the lowest key which also contains the first row
         // of the table.
         const cursor = try self.find(self.root_page, 0);
-        const page = try self.pager.getPage(cursor.page);
-        const leaf = &page.body.Leaf;
+        const page_node = try self.pager.getPage(cursor.page);
+        const leaf = &page_node.body.Leaf;
         return .{
             .table = self,
             .page = cursor.page,
@@ -100,14 +101,14 @@ pub const Table = struct {
     }
 
     /// Get a cursor to a row in the table.
-    fn find(self: *Self, page_num: u32, key: u32) Error!Cursor {
-        const page = try self.pager.getPage(page_num);
-        switch (page.body) {
+    fn find(self: *Self, page: u32, key: u32) Error!Cursor {
+        const p = try self.pager.getPage(page);
+        switch (p.body) {
             .Leaf => |*leaf| {
                 const index = leaf.find(key);
                 return .{
                     .table = self,
-                    .page = page_num,
+                    .page = page,
                     .cell = index,
                     .end = index + 1 >= leaf.num_cells,
                 };
@@ -120,119 +121,115 @@ pub const Table = struct {
         }
     }
 
-    fn createNewRoot(self: *Self, root_page: *Node, r_child_page: *Node, r_child_page_num: u32) Error!void {
+    fn createNewRoot(self: *Self, root: *Node, rchild: *Node, rchild_page: u32) Error!void {
         // allocate a new page for the left child and copy the current root page into it.
         // the current root page contains the left child page result from a previous split.
-        const l_child_page_num = self.pager.getUnusedPage();
-        const l_child_page = try self.pager.getPage(l_child_page_num);
-        l_child_page.* = root_page.*;
-        l_child_page.header.is_root = 0;
-        l_child_page.header.parent = self.root_page;
-        r_child_page.header.is_root = 0;
-        r_child_page.header.parent = self.root_page;
+        const lchild_page = self.pager.getUnusedPage();
+        const lchild = try self.pager.getPage(lchild_page);
+        lchild.* = root.*;
+        lchild.header.is_root = 0;
+        lchild.header.parent = self.root_page;
+        rchild.header.is_root = 0;
+        rchild.header.parent = self.root_page;
 
-        // initialize a new internal note at the root page pointing the left and right child.
-        const new_root = Node.new(.Internal, 1, 0);
-        const root_body = &root_page.body.Internal;
+        // initialize a new internal node at the root page pointing the left and right child.
+        var new_root = Node.new(.Internal, 1, 0);
+        var root_body = &new_root.body.Internal;
         root_body.num_keys = 1;
-        root_body.right_child = @intCast(u32, r_child_page_num);
-        root_body.cells[0].child = @intCast(u32, l_child_page_num);
-        root_body.cells[0].key = l_child_page.getMaxKey();
-        root_page.* = new_root;
+        root_body.right_child = @intCast(u32, rchild_page);
+        root_body.cells[0].child = @intCast(u32, lchild_page);
+        root_body.cells[0].key = lchild.getMaxKey();
+        root.* = new_root;
     }
 
-    fn leafInsert(self: *Self, page: *Node, cell_num: u32, key: u32, val: *const Row) Error!void {
-        const leaf = &page.body.Leaf;
+    fn leafInsert(self: *Self, page_node: *Node, cell: u32, key: u32, val: *const Row) Error!void {
+        const leaf = &page_node.body.Leaf;
         if (leaf.num_cells >= LeafNode.MAX_CELLS) {
             // Leaf is full so we split.
-            return self.leafSplitInsert(page, cell_num, key, val);
+            return self.leafSplitInsert(page_node, cell, key, val);
         }
 
-        // copy cells after the insertion point backward one slot, leaving room at cell_num.
-        if (cell_num < leaf.num_cells) {
+        // copy cells after the insertion point backward one slot, leaving room at cell.
+        if (cell < leaf.num_cells) {
             var idx = leaf.num_cells;
-            while (idx > cell_num) : (idx -= 1) {
+            while (idx > cell) : (idx -= 1) {
                 leaf.cells[idx] = leaf.cells[idx - 1];
             }
         }
 
         leaf.num_cells += 1;
-        leaf.cells[cell_num] = .{ .key = key, .val = val.* };
+        leaf.cells[cell] = .{ .key = key, .val = val.* };
     }
 
-    fn leafSplitInsert(self: *Self, old_page: *Node, cell_num: u32, key: u32, val: *const Row) Error!void {
-        const old_page_header = &old_page.header;
-        const new_page_num = self.pager.getUnusedPage();
-        const new_page = try self.pager.getPage(new_page_num);
-        new_page.* = Node.new(.Leaf, 0, 0);
-        new_page.header.parent = old_page_header.parent;
+    fn leafSplitInsert(self: *Self, lchild: *Node, cell: u32, key: u32, val: *const Row) Error!void {
+        const lchild_header = &lchild.header;
+        const rchild_page = self.pager.getUnusedPage();
+        const rchild = try self.pager.getPage(rchild_page);
+        rchild.* = Node.new(.Leaf, 0, lchild_header.parent);
 
-        const old_leaf = &old_page.body.Leaf;
-        const new_leaf = &new_page.body.Leaf;
-        new_leaf.num_cells = LeafNode.R_SPLIT_CELLS;
-        new_leaf.next_leaf = old_leaf.next_leaf;
-        old_leaf.num_cells = LeafNode.L_SPLIT_CELLS;
-        old_leaf.next_leaf = new_page_num;
+        const lchild_leaf = &lchild.body.Leaf;
+        const rchild_leaf = &rchild.body.Leaf;
+        rchild_leaf.num_cells = LeafNode.R_SPLIT_CELLS;
+        rchild_leaf.next_leaf = lchild_leaf.next_leaf;
+        lchild_leaf.num_cells = LeafNode.L_SPLIT_CELLS;
+        lchild_leaf.next_leaf = rchild_page;
 
-        const old_max = old_leaf.getMaxKey();
-        var i: u32 = LeafNode.MAX_CELLS + 1;
-        while (i > 0) : (i -= 1) {
-            const old_cell_id = i - 1;
+        const lchild_max_key_old = lchild_leaf.getMaxKey();
+        var idx: u32 = LeafNode.MAX_CELLS + 1;
+        while (idx > 0) : (idx -= 1) {
+            const old_cell_id = idx - 1;
             var cells: *[LeafNode.MAX_CELLS]LeafNodeCell = undefined;
             if (old_cell_id >= LeafNode.L_SPLIT_CELLS) {
-                cells = &new_leaf.cells;
+                cells = &rchild_leaf.cells;
             } else {
-                cells = &old_leaf.cells;
+                cells = &lchild_leaf.cells;
             }
 
             const new_cell_id = old_cell_id % LeafNode.L_SPLIT_CELLS;
-            if (old_cell_id == cell_num) {
+            if (old_cell_id == cell) {
                 cells[new_cell_id] = .{ .key = key, .val = val.* };
-            } else if (old_cell_id > cell_num) {
-                cells[new_cell_id] = old_leaf.cells[old_cell_id - 1];
+            } else if (old_cell_id > cell) {
+                cells[new_cell_id] = lchild_leaf.cells[old_cell_id - 1];
             } else {
-                cells[new_cell_id] = old_leaf.cells[old_cell_id];
+                cells[new_cell_id] = lchild_leaf.cells[old_cell_id];
             }
         }
 
-        if (old_page_header.is_root > 0) {
-            try self.createNewRoot(old_page, new_page, new_page_num);
+        if (lchild_header.is_root > 0) {
+            try self.createNewRoot(lchild, rchild, rchild_page);
         } else {
-            const new_max = old_leaf.getMaxKey();
-            const parent_page = try self.pager.getPage(old_page_header.parent);
-            try self.internalInsert(parent_page, new_page, new_page_num, old_max, new_max);
+            const lchild_max_key_new = lchild_leaf.getMaxKey();
+            const rchild_max_key = rchild_leaf.getMaxKey();
+            const parent_page = try self.pager.getPage(lchild_header.parent);
+            parent_page.body.Internal.updateKey(lchild_max_key_old, lchild_max_key_new);
+            try self.internalInsert(parent_page, rchild_max_key, rchild_page);
         }
     }
 
-    fn internalInsert(self: *Self, page: *Node, child_page: *const Node, child_page_num: u32, old_max: u32, new_max: u32) Error!void {
-        const internal = &page.body.Internal;
+    fn internalInsert(self: *Self, page_node: *Node, new_child_key: u32, new_child_page: u32) Error!void {
+        const internal = &page_node.body.Internal;
         if (internal.num_keys >= InternalNode.MAX_KEYS) {
-            @panic("Need to implement splitting of internal node");
+            @panic("Internal node split is not implemented!");
         }
 
-        const old_num_keys = internal.num_keys;
-        internal.updateKey(old_max, new_max);
-        internal.num_keys += 1;
+        const rchild_page = internal.right_child;
+        const rchild_page_node = try self.pager.getPage(rchild_page);
+        const rchild_max_key = rchild_page_node.getMaxKey();
 
-        const parent_right_child_page_num = internal.right_child;
-        const parent_right_child_page = try self.pager.getPage(parent_right_child_page_num);
-        const parent_right_child_max_key = parent_right_child_page.getMaxKey();
-
-        const child_max_key = child_page.getMaxKey();
-        if (child_max_key > parent_right_child_max_key) {
-            internal.cells[old_num_keys].key = parent_right_child_max_key;
-            internal.cells[old_num_keys].child = parent_right_child_page_num;
-            internal.right_child = child_page_num;
+        if (new_child_key > rchild_max_key) {
+            internal.cells[internal.num_keys].key = rchild_max_key;
+            internal.cells[internal.num_keys].child = rchild_page;
+            internal.right_child = new_child_page;
         } else {
-            const child_internal = &child_page.body.Internal;
-            const child_max_key_idx = child_internal.find(child_max_key);
-            var i = old_num_keys;
-            while (i > child_max_key_idx) : (i -= 1) {
-                internal.cells[i] = internal.cells[i - 1];
+            const new_key_idx = internal.find(new_child_key);
+            var cell_idx = internal.num_keys;
+            while (cell_idx > new_key_idx) : (cell_idx -= 1) {
+                internal.cells[cell_idx] = internal.cells[cell_idx - 1];
             }
-            internal.cells[i].child = child_page_num;
-            internal.cells[i].key = child_max_key;
+            internal.cells[cell_idx].child = new_child_page;
+            internal.cells[cell_idx].key = new_child_key;
         }
+        internal.num_keys += 1;
     }
 };
 

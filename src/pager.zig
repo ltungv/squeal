@@ -81,42 +81,42 @@ pub const Pager = struct {
     }
 
     /// Flush a page to disk.
-    pub fn flush(self: *Self, page_num: u32) Error!void {
-        const page = self.pages[page_num] orelse return Error.NullPage;
+    pub fn flush(self: *Self, page: u32) Error!void {
+        const page_node = self.pages[page] orelse return Error.NullPage;
         var buf: [PAGE_SIZE]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buf);
-        try page.serialize(&stream);
-        _ = try self.file.pwriteAll(&buf, page_num * PAGE_SIZE);
+        try page_node.serialize(&stream);
+        _ = try self.file.pwriteAll(&buf, page * PAGE_SIZE);
     }
 
     /// Get a pointer to a cached page. If the page is not in cache, it will be read from disk.
-    pub fn getPage(self: *Self, page_num: u32) Error!*Node {
-        if (page_num >= MAX_PAGES) {
+    pub fn getPage(self: *Self, page: u32) Error!*Node {
+        if (page >= MAX_PAGES) {
             return Error.OutOfBound;
         }
 
-        var page: *Node = undefined;
-        if (self.pages[page_num]) |p| {
-            page = p;
+        var page_node: *Node = undefined;
+        if (self.pages[page]) |node| {
+            page_node = node;
         } else {
-            page = try self.allocator.create(Node);
+            page_node = try self.allocator.create(Node);
             const num_pages = self.len / PAGE_SIZE;
-            if (page_num < num_pages) {
+            if (page < num_pages) {
                 // Load page from disk if it exists.
                 var page_buf: [PAGE_SIZE]u8 = undefined;
-                _ = try self.file.preadAll(&page_buf, page_num * PAGE_SIZE);
+                _ = try self.file.preadAll(&page_buf, page * PAGE_SIZE);
                 // Deserialize page into its in-memory representation.
                 var stream = std.io.fixedBufferStream(@as([]const u8, &page_buf));
-                try page.deserialize(&stream);
+                try page_node.deserialize(&stream);
             }
 
-            if (page_num >= self.pages_len) {
-                self.pages_len = page_num + 1;
+            if (page >= self.pages_len) {
+                self.pages_len = page + 1;
             }
-            self.pages[page_num] = page;
+            self.pages[page] = page_node;
         }
 
-        return page;
+        return page_node;
     }
 
     pub fn getUnusedPage(self: *const Self) u32 {
