@@ -308,7 +308,7 @@ pub const Table = struct {
 
     fn getTreeMaxKey(self: *Self, page: *Node) Error!u32 {
         switch (page.body) {
-            .Leaf => |*leaf| return leaf.getMaxKey(),
+            .Leaf => |*leaf| return leaf.cells[leaf.num_cells - 1].key,
             .Internal => |*internal| {
                 const right_child = try self.pager.getPage(internal.right_child);
                 return self.getTreeMaxKey(right_child);

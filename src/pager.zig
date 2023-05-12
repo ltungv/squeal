@@ -278,10 +278,6 @@ pub const LeafNode = struct {
         }
         return left;
     }
-
-    pub fn getMaxKey(self: *const Self) u32 {
-        return self.cells[self.num_cells - 1].key;
-    }
 };
 
 pub const LeafNodeCell = struct {
