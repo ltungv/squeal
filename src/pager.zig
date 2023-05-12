@@ -150,10 +150,6 @@ pub const Node = struct {
         try self.header.deserialize(stream);
         try self.body.deserialize(stream);
     }
-
-    pub fn getMaxKey(self: *const Self) u32 {
-        return self.body.getMaxKey();
-    }
 };
 
 pub const NodeHeader = struct {
@@ -224,13 +220,6 @@ pub const NodeBody = union(NodeType) {
                 self.* = .{ .Internal = internal };
             },
         }
-    }
-
-    pub fn getMaxKey(self: *const Self) u32 {
-        return switch (self.*) {
-            .Leaf => |leaf| leaf.getMaxKey(),
-            .Internal => |internal| internal.getMaxKey(),
-        };
     }
 };
 
@@ -380,10 +369,6 @@ pub const InternalNode = struct {
         if (old_child_index < self.num_keys) {
             self.cells[old_child_index].key = new_key;
         }
-    }
-
-    pub fn getMaxKey(self: *const Self) u32 {
-        return self.cells[self.num_keys - 1].key;
     }
 };
 
