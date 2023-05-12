@@ -377,7 +377,9 @@ pub const InternalNode = struct {
 
     pub fn updateKey(self: *Self, old_key: u32, new_key: u32) void {
         const old_child_index = self.find(old_key);
-        self.cells[old_child_index].key = new_key;
+        if (old_child_index < self.num_keys) {
+            self.cells[old_child_index].key = new_key;
+        }
     }
 
     pub fn getMaxKey(self: *const Self) u32 {
