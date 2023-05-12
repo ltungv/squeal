@@ -157,6 +157,14 @@ pub const Table = struct {
         }
     }
 
+    /// This function is called to insert a new cell into the given leaf node.
+    ///
+    /// ## Arguments
+    ///
+    /// - `page_node`: The leaf node.
+    /// - `cell`: The cell id to insert the new cell.
+    /// - `key`: The key of the new cell.
+    /// - `val`: The value of the new cell.
     fn leafInsert(self: *Self, page_node: *Node, cell: u32, key: u32, val: *const Row) Error!void {
         const leaf = &page_node.body.Leaf;
         if (leaf.num_cells >= LeafNode.MAX_CELLS) {
@@ -175,6 +183,16 @@ pub const Table = struct {
         }
     }
 
+    /// This function is called to insert a new cell into the given full leaf node.
+    /// The function will split the leaf to make space for the new cell and update
+    /// the tree accordingly.
+    ///
+    /// ## Arguments
+    ///
+    /// - `lchild`: The leaf node to be splitted.
+    /// - `cell`: The cell id to insert the new cell.
+    /// - `key`: The key of the new cell.
+    /// - `val`: The value of the new cell.
     fn leafSplitInsert(self: *Self, lchild: *Node, cell: u32, key: u32, val: *const Row) Error!void {
         const rchild_page = self.pager.getUnusedPage();
         const rchild = try self.pager.getPage(rchild_page);
@@ -184,6 +202,7 @@ pub const Table = struct {
         const rchild_leaf = &rchild.body.Leaf;
         const lchild_max_key_old = try self.getTreeMaxKey(lchild);
 
+        // Copy the cells of the left child into the right child while adding the new cell.
         var idx: u32 = LeafNode.MAX_CELLS + 1;
         while (idx > 0) : (idx -= 1) {
             const old_cell_id = idx - 1;
@@ -219,19 +238,36 @@ pub const Table = struct {
         }
     }
 
+    /// This function is called to insert a new cell into the given internal node.
+    ///
+    /// ## Arguments
+    ///
+    /// - `page_node`: The internal node.
+    /// - `new_child_key`: The key of the new cell
+    /// - `new_child_page`: The child of the new cell.
+    /// - `lchild_max_key_old`: The old key value of the cell
+    /// - `lchild_max_key_new`: The new key value of the cell
     fn internalInsert(self: *Self, page_node: *Node, new_child_key: u32, new_child_page: u32, lchild_max_key_old: u32, lchild_max_key_new: u32) Error!void {
         const internal = &page_node.body.Internal;
+
+        // Because we just performed a split at 1 tree level bellow, the max key of page_node might
+        // have change so we update it here.
         internal.updateKey(lchild_max_key_old, lchild_max_key_new);
+
         if (internal.num_keys >= InternalNode.MAX_KEYS) {
             try self.internalSplitInsert(page_node, new_child_key, new_child_page);
         } else {
             const rchild = try self.pager.getPage(internal.right_child);
             const rchild_max_key = try self.getTreeMaxKey(rchild);
             if (new_child_key > rchild_max_key) {
+                // The previous right child now is included in a cell in the node.
                 internal.cells[internal.num_keys].key = rchild_max_key;
                 internal.cells[internal.num_keys].child = internal.right_child;
+                // The insert key is larger than the largest key in the subtree, thus the page
+                // become the new right child of the node.
                 internal.right_child = new_child_page;
             } else {
+                // Move cells one position to the right to make space for the new cell.
                 const new_key_idx = internal.find(new_child_key);
                 var cell_idx = internal.num_keys;
                 while (cell_idx > new_key_idx) : (cell_idx -= 1) {
@@ -244,6 +280,15 @@ pub const Table = struct {
         }
     }
 
+    /// This function is called to insert a new cell into the given full internal node.
+    /// The function will split the internal to make space for the new cell and update
+    /// the tree accordingly.
+    ///
+    /// ## Arguments
+    ///
+    /// - `page_node`: The internal node.
+    /// - `new_child_key`: The key of the new cell
+    /// - `new_child_page`: The child of the new cell.
     fn internalSplitInsert(self: *Self, lchild: *Node, new_child_key: u32, new_child_page: u32) Error!void {
         const rchild_page = self.pager.getUnusedPage();
         const rchild = try self.pager.getPage(rchild_page);
@@ -254,6 +299,7 @@ pub const Table = struct {
         const lchild_max_key_old = try self.getTreeMaxKey(lchild);
         const new_child_cell_id = lchild_internal.find(new_child_key);
 
+        // Copy the cells of the left child into the right child while adding the new cell.
         var idx: u32 = InternalNode.MAX_KEYS + 1;
         while (idx > 0) : (idx -= 1) {
             const old_cell_id = idx - 1;
@@ -281,16 +327,21 @@ pub const Table = struct {
 
         if (new_child_key > lchild_max_key_old) {
             const rchild_new_child_cell_id = new_child_cell_id % InternalNode.L_SPLIT_KEYS;
+            // The new child is the new right child of the right internal node
             rchild_internal.right_child = new_child_page;
+            // Use the previous right child key and pointer for the new cell
             rchild_internal.cells[rchild_new_child_cell_id].child = lchild_internal.right_child;
             rchild_internal.cells[rchild_new_child_cell_id].key = lchild_max_key_old;
         } else {
+            // Move the right child over to our new right internal node
             rchild_internal.right_child = lchild_internal.right_child;
         }
+        // Update the right child pointer be the child of the last cell of the left internal node
         lchild_internal.right_child = lchild_internal.cells[InternalNode.L_SPLIT_KEYS - 1].child;
 
-        const rchild_rchild = try self.pager.getPage(rchild_internal.right_child);
-        rchild_rchild.header.parent = rchild_page;
+        // Update the parent pointers of the children of the right internal node.
+        const rinternal_rchild = try self.pager.getPage(rchild_internal.right_child);
+        rinternal_rchild.header.parent = rchild_page;
         for (rchild_internal.cells) |cell| {
             const rchild_child = try self.pager.getPage(cell.child);
             rchild_child.header.parent = rchild_page;
@@ -306,6 +357,7 @@ pub const Table = struct {
         }
     }
 
+    // Get the max key value of the tree rooted at the given page.
     fn getTreeMaxKey(self: *Self, page: *Node) Error!u32 {
         switch (page.body) {
             .Leaf => |*leaf| return leaf.cells[leaf.num_cells - 1].key,
