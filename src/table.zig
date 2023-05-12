@@ -182,7 +182,7 @@ pub const Table = struct {
 
         const lchild_leaf = &lchild.body.Leaf;
         const rchild_leaf = &rchild.body.Leaf;
-        const lchild_max_key_old = lchild_leaf.getMaxKey();
+        const lchild_max_key_old = try self.getTreeMaxKey(lchild);
 
         var idx: u32 = LeafNode.MAX_CELLS + 1;
         while (idx > 0) : (idx -= 1) {
@@ -209,11 +209,11 @@ pub const Table = struct {
         rchild_leaf.next_leaf = lchild_leaf.next_leaf;
         lchild_leaf.next_leaf = rchild_page;
 
+        const lchild_max_key_new = try self.getTreeMaxKey(lchild);
         if (lchild.header.is_root > 0) {
-            try self.createNewRoot(lchild, lchild_leaf.getMaxKey(), rchild, rchild_page);
+            try self.createNewRoot(lchild, lchild_max_key_new, rchild, rchild_page);
         } else {
-            const lchild_max_key_new = lchild_leaf.getMaxKey();
-            const rchild_max_key = rchild_leaf.getMaxKey();
+            const rchild_max_key = try self.getTreeMaxKey(rchild);
             const parent = try self.pager.getPage(lchild.header.parent);
             try self.internalInsert(parent, rchild_max_key, rchild_page, lchild_max_key_old, lchild_max_key_new);
         }
@@ -249,9 +249,9 @@ pub const Table = struct {
         const rchild = try self.pager.getPage(rchild_page);
         rchild.* = Node.new(.Internal, 0, lchild.header.parent);
 
-        const lchild_tree_max_key_old = try self.getTreeMaxKey(lchild);
         const lchild_internal = &lchild.body.Internal;
         const rchild_internal = &rchild.body.Internal;
+        const lchild_max_key_old = try self.getTreeMaxKey(lchild);
         const new_child_cell_id = lchild_internal.find(new_child_key);
 
         var idx: u32 = InternalNode.MAX_KEYS + 1;
@@ -279,12 +279,13 @@ pub const Table = struct {
         lchild_internal.num_keys = InternalNode.L_SPLIT_KEYS - 1;
         rchild_internal.num_keys = InternalNode.R_SPLIT_KEYS;
 
-        rchild_internal.right_child = lchild_internal.right_child;
-        if (new_child_key > lchild_tree_max_key_old) {
+        if (new_child_key > lchild_max_key_old) {
             const rchild_new_child_cell_id = new_child_cell_id % InternalNode.L_SPLIT_KEYS;
             rchild_internal.right_child = new_child_page;
             rchild_internal.cells[rchild_new_child_cell_id].child = lchild_internal.right_child;
-            rchild_internal.cells[rchild_new_child_cell_id].key = lchild_tree_max_key_old;
+            rchild_internal.cells[rchild_new_child_cell_id].key = lchild_max_key_old;
+        } else {
+            rchild_internal.right_child = lchild_internal.right_child;
         }
         lchild_internal.right_child = lchild_internal.cells[InternalNode.L_SPLIT_KEYS - 1].child;
 
@@ -295,13 +296,13 @@ pub const Table = struct {
             rchild_child.header.parent = rchild_page;
         }
 
-        const lchild_tree_max_key_new = try self.getTreeMaxKey(lchild);
+        const lchild_max_key_new = try self.getTreeMaxKey(lchild);
         if (lchild.header.is_root > 0) {
-            try self.createNewRoot(lchild, lchild_tree_max_key_new, rchild, rchild_page);
+            try self.createNewRoot(lchild, lchild_max_key_new, rchild, rchild_page);
         } else {
             const rchild_tree_max_key = try self.getTreeMaxKey(rchild);
             const parent = try self.pager.getPage(lchild.header.parent);
-            try self.internalInsert(parent, rchild_tree_max_key, rchild_page, lchild_tree_max_key_old, lchild_tree_max_key_new);
+            try self.internalInsert(parent, rchild_tree_max_key, rchild_page, lchild_max_key_old, lchild_max_key_new);
         }
     }
 
