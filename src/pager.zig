@@ -267,9 +267,8 @@ pub const LeafNode = struct {
     }
 
     pub fn find(self: *const Self, key: u32) u32 {
-        const num_cells = self.num_cells;
         var left: u32 = 0;
-        var right = num_cells;
+        var right = self.num_cells;
         while (left < right) {
             const index = (left + right) / 2;
             const cell = self.cells[index];
@@ -355,7 +354,8 @@ pub const InternalNode = struct {
         while (left < right) {
             const index = (left + right) / 2;
             const cell = self.cells[index];
-            if (key <= cell.key) right = index else left = index + 1;
+            if (key == cell.key) return index;
+            if (key < cell.key) right = index else left = index + 1;
         }
         return left;
     }
