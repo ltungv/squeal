@@ -137,14 +137,13 @@ test "vm keeps data on reopen after closing" {
         var expected = std.ArrayList(u8).init(testing.allocator);
         defer expected.deinit();
 
-        var row: u32 = 0;
-        while (row < 3) : (row += 1) {
-            const statement = try std.fmt.allocPrint(testing.allocator, "insert {d} 'key{d}' 'value{d}'\n", .{ row, row, row });
-            defer testing.allocator.free(statement);
-            try input.appendSlice(statement);
-            try expected.appendSlice("db > Executed.\n");
-        }
+        try input.appendSlice("insert 0 'key0' 'value0'\n");
+        try input.appendSlice("insert 1 'key1' 'value1'\n");
+        try input.appendSlice("insert 2 'key2' 'value2'\n");
         try input.appendSlice(".exit\n");
+        try expected.appendSlice("db > Executed.\n");
+        try expected.appendSlice("db > Executed.\n");
+        try expected.appendSlice("db > Executed.\n");
         try expected.appendSlice("db > ");
 
         try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
@@ -156,19 +155,11 @@ test "vm keeps data on reopen after closing" {
         defer expected.deinit();
 
         try input.appendSlice("select\n");
-        var row: u32 = 0;
-        while (row < 3) : (row += 1) {
-            var returned_row: []u8 = undefined;
-            if (row == 0) {
-                returned_row = try std.fmt.allocPrint(testing.allocator, "db > ({d}, key{d}, value{d})\n", .{ row, row, row });
-            } else {
-                returned_row = try std.fmt.allocPrint(testing.allocator, "({d}, key{d}, value{d})\n", .{ row, row, row });
-            }
-            defer testing.allocator.free(returned_row);
-            try expected.appendSlice(returned_row);
-        }
-        try expected.appendSlice("Executed.\n");
         try input.appendSlice(".exit\n");
+        try expected.appendSlice("db > (0, key0, value0)\n");
+        try expected.appendSlice("(1, key1, value1)\n");
+        try expected.appendSlice("(2, key2, value2)\n");
+        try expected.appendSlice("Executed.\n");
         try expected.appendSlice("db > ");
 
         try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
