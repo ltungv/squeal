@@ -104,8 +104,9 @@ pub const Vm = struct {
 
     fn printTree(self: *Self, page_num: u32, indentation: usize) Error!void {
         const page = try self.table.pager.getPage(page_num);
-        switch (page.body) {
-            .Leaf => |leaf| {
+        switch (page.header.node_type) {
+            .Leaf => {
+                const leaf = &page.body.Leaf;
                 try self.printIndentation(indentation);
                 try self.stream.printf("- leaf (size {d})\n", .{leaf.num_cells});
 
@@ -115,7 +116,8 @@ pub const Vm = struct {
                     try self.stream.printf("  - {d}\n", .{leaf.cells[cell_num].key});
                 }
             },
-            .Internal => |internal| {
+            .Internal => {
+                const internal = &page.body.Internal;
                 try self.printIndentation(indentation);
                 try self.stream.printf("- internal (size {d})\n", .{internal.num_keys});
 

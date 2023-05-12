@@ -101,8 +101,9 @@ pub const Table = struct {
     /// Get a cursor to a row in the table.
     fn find(self: *Self, page: u32, key: u32) Error!Cursor {
         const node = try self.pager.getPage(page);
-        switch (node.body) {
-            .Leaf => |*leaf| {
+        switch (node.header.node_type) {
+            .Leaf => {
+                const leaf = &node.body.Leaf;
                 const index = leaf.find(key);
                 return .{
                     .table = self,
@@ -111,7 +112,8 @@ pub const Table = struct {
                     .end = index + 1 >= leaf.num_cells,
                 };
             },
-            .Internal => |internal| {
+            .Internal => {
+                const internal = &node.body.Internal;
                 const child_index = internal.find(key);
                 const child = internal.getChild(child_index);
                 return self.find(child, key);
@@ -151,7 +153,7 @@ pub const Table = struct {
 
         // Update children the left node if it's an internal node. The children of the right node
         // should have their parent pointers updated by the previous routine(s).
-        if (lnode.body == .Internal) {
+        if (lnode.header.node_type == .Internal) {
             for (lnode.body.Internal.cells) |*cell| {
                 const lnode_child = try self.pager.getPage(cell.child);
                 lnode_child.header.parent = lnode_page;
@@ -361,10 +363,13 @@ pub const Table = struct {
 
     // Get the max key value of the tree rooted at the given page.
     fn getTreeMaxKey(self: *Self, page: *Node) Error!u32 {
-        switch (page.body) {
-            .Leaf => |*leaf| return leaf.cells[leaf.num_cells - 1].key,
-            .Internal => |*internal| {
-                const right_child = try self.pager.getPage(internal.right_child);
+        switch (page.header.node_type) {
+            .Leaf => {
+                const leaf = &page.body.Leaf;
+                return leaf.cells[leaf.num_cells - 1].key;
+            },
+            .Internal => {
+                const right_child = try self.pager.getPage(page.body.Internal.right_child);
                 return self.getTreeMaxKey(right_child);
             },
         }

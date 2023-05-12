@@ -26,8 +26,8 @@ test "serialize node leaf" {
         cell.* = LeafNodeCell{ .key = @intCast(u32, cell_index), .val = row };
     }
     var node = Node{
-        .header = NodeHeader{ .is_root = 69, .parent = 420 },
-        .body = NodeBody{ .Leaf = leaf },
+        .header = .{ .parent = 420, .is_root = 69, .node_type = .Leaf },
+        .body = .{ .Leaf = leaf },
     };
 
     var buf: [Node.SERIALIZED_LEAF_SIZE]u8 = undefined;
@@ -37,9 +37,9 @@ test "serialize node leaf" {
     var istream = std.io.fixedBufferStream(&buf);
     var reader = istream.reader();
 
-    try testing.expectEqual(node.header.is_root, try reader.readInt(u8, .Little));
     try testing.expectEqual(node.header.parent, try reader.readInt(u32, .Little));
-    try testing.expectEqual(NodeType.Leaf, try reader.readEnum(NodeType, .Little));
+    try testing.expectEqual(node.header.is_root, try reader.readInt(u8, .Little));
+    try testing.expectEqual(node.header.node_type, try reader.readEnum(NodeType, .Little));
     try testing.expectEqual(node.body.Leaf.num_cells, try reader.readInt(u32, .Little));
     try testing.expectEqual(node.body.Leaf.next_leaf, try reader.readInt(u32, .Little));
 
@@ -66,7 +66,7 @@ test "deserialize node leaf" {
         cell.* = LeafNodeCell{ .key = @intCast(u32, cell_index), .val = row };
     }
     var node = Node{
-        .header = NodeHeader{ .is_root = 69, .parent = 420 },
+        .header = NodeHeader{ .is_root = 69, .parent = 420, .node_type = .Leaf },
         .body = NodeBody{ .Leaf = leaf },
     };
 
@@ -78,7 +78,8 @@ test "deserialize node leaf" {
     var new_node: Node = undefined;
     try new_node.deserialize(&istream);
 
-    try testing.expectEqual(node, new_node);
+    try testing.expectEqual(node.header, new_node.header);
+    try testing.expectEqual(node.body.Leaf, new_node.body.Leaf);
 }
 
 test "serialize node internal" {
@@ -92,7 +93,7 @@ test "serialize node internal" {
         cell.key = @intCast(u32, cell_index);
     }
     var node = Node{
-        .header = NodeHeader{ .is_root = 69, .parent = 420 },
+        .header = NodeHeader{ .is_root = 69, .parent = 420, .node_type = .Internal },
         .body = NodeBody{ .Internal = internal },
     };
 
@@ -103,9 +104,9 @@ test "serialize node internal" {
     var istream = std.io.fixedBufferStream(&buf);
     var reader = istream.reader();
 
-    try testing.expectEqual(node.header.is_root, try reader.readInt(u8, .Little));
     try testing.expectEqual(node.header.parent, try reader.readInt(u32, .Little));
-    try testing.expectEqual(NodeType.Internal, try reader.readEnum(NodeType, .Little));
+    try testing.expectEqual(node.header.is_root, try reader.readInt(u8, .Little));
+    try testing.expectEqual(node.header.node_type, try reader.readEnum(NodeType, .Little));
     try testing.expectEqual(node.body.Internal.num_keys, try reader.readInt(u32, .Little));
     try testing.expectEqual(node.body.Internal.right_child, try reader.readInt(u32, .Little));
 
@@ -128,7 +129,7 @@ test "deserialize node internal" {
         cell.key = @intCast(u32, cell_index);
     }
     var node = Node{
-        .header = NodeHeader{ .is_root = 69, .parent = 420 },
+        .header = NodeHeader{ .is_root = 69, .parent = 420, .node_type = .Internal },
         .body = NodeBody{ .Internal = internal },
     };
 
@@ -140,11 +141,12 @@ test "deserialize node internal" {
     var new_node: Node = undefined;
     try new_node.deserialize(&istream);
 
-    try testing.expectEqual(node, new_node);
+    try testing.expectEqual(node.header, new_node.header);
+    try testing.expectEqual(node.body.Internal, new_node.body.Internal);
 }
 
 test "serialize node header" {
-    var header = NodeHeader{ .is_root = 69, .parent = 420 };
+    var header = NodeHeader{ .is_root = 69, .parent = 420, .node_type = .Internal };
 
     var buf: [NodeHeader.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
@@ -153,12 +155,13 @@ test "serialize node header" {
     var istream = std.io.fixedBufferStream(&buf);
     var reader = istream.reader();
 
-    try testing.expectEqual(header.is_root, try reader.readInt(u8, .Little));
     try testing.expectEqual(header.parent, try reader.readInt(u32, .Little));
+    try testing.expectEqual(header.is_root, try reader.readInt(u8, .Little));
+    try testing.expectEqual(header.node_type, try reader.readEnum(NodeType, .Little));
 }
 
 test "deserialize node header" {
-    var header = NodeHeader{ .is_root = 69, .parent = 420 };
+    var header = NodeHeader{ .is_root = 69, .parent = 420, .node_type = .Leaf };
 
     var buf: [NodeHeader.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
@@ -183,14 +186,13 @@ test "serialize node body leaf" {
     }
     var body = NodeBody{ .Leaf = leaf };
 
-    var buf: [NodeBody.SERIALIZED_LEAF_SIZE]u8 = undefined;
+    var buf: [LeafNode.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
-    try body.serialize(&ostream);
+    try body.serialize(&ostream, .Leaf);
 
     var istream = std.io.fixedBufferStream(&buf);
     var reader = istream.reader();
 
-    try testing.expectEqual(NodeType.Leaf, try reader.readEnum(NodeType, .Little));
     try testing.expectEqual(leaf.num_cells, try reader.readInt(u32, .Little));
     try testing.expectEqual(leaf.next_leaf, try reader.readInt(u32, .Little));
 
@@ -218,15 +220,15 @@ test "deserialize node body leaf" {
     }
     var body = NodeBody{ .Leaf = leaf };
 
-    var buf: [NodeBody.SERIALIZED_LEAF_SIZE]u8 = undefined;
+    var buf: [LeafNode.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
-    try body.serialize(&ostream);
+    try body.serialize(&ostream, .Leaf);
 
     var istream = std.io.fixedBufferStream(@as([]const u8, &buf));
     var new_body: NodeBody = undefined;
-    try new_body.deserialize(&istream);
+    try new_body.deserialize(&istream, .Leaf);
 
-    try testing.expectEqual(body, new_body);
+    try testing.expectEqual(body.Leaf, new_body.Leaf);
 }
 
 test "serialize node body internal" {
@@ -241,14 +243,13 @@ test "serialize node body internal" {
     }
     var body = NodeBody{ .Internal = internal };
 
-    var buf: [NodeBody.SERIALIZED_INTERNAL_SIZE]u8 = undefined;
+    var buf: [InternalNode.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
-    try body.serialize(&ostream);
+    try body.serialize(&ostream, .Internal);
 
     var istream = std.io.fixedBufferStream(&buf);
     var reader = istream.reader();
 
-    try testing.expectEqual(NodeType.Internal, try reader.readEnum(NodeType, .Little));
     try testing.expectEqual(internal.num_keys, try reader.readInt(u32, .Little));
     try testing.expectEqual(internal.right_child, try reader.readInt(u32, .Little));
 
@@ -272,15 +273,15 @@ test "deserialize node body internal" {
     }
     var body = NodeBody{ .Internal = internal };
 
-    var buf: [NodeBody.SERIALIZED_INTERNAL_SIZE]u8 = undefined;
+    var buf: [InternalNode.SERIALIZED_SIZE]u8 = undefined;
     var ostream = std.io.fixedBufferStream(&buf);
-    try body.serialize(&ostream);
+    try body.serialize(&ostream, .Internal);
 
     var istream = std.io.fixedBufferStream(@as([]const u8, &buf));
     var new_body: NodeBody = undefined;
-    try new_body.deserialize(&istream);
+    try new_body.deserialize(&istream, .Internal);
 
-    try testing.expectEqual(body, new_body);
+    try testing.expectEqual(body.Internal, new_body.Internal);
 }
 
 test "serialize leaf node" {

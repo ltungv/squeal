@@ -71,8 +71,8 @@ test "table insert should update rows count" {
     var num_rows: u32 = 0;
     for (table.pager.pages[0..table.pager.pages_len]) |nullable_page| {
         if (nullable_page) |page| {
-            switch (page.body) {
-                .Leaf => |*leaf| num_rows += leaf.num_cells,
+            switch (page.header.node_type) {
+                .Leaf => num_rows += page.body.Leaf.num_cells,
                 .Internal => {},
             }
         }

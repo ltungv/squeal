@@ -130,57 +130,60 @@ pub const Node = struct {
     header: NodeHeader,
     body: NodeBody,
 
-    pub const SERIALIZED_LEAF_SIZE = NodeHeader.SERIALIZED_SIZE + NodeBody.SERIALIZED_LEAF_SIZE;
-    pub const SERIALIZED_INTERNAL_SIZE = NodeHeader.SERIALIZED_SIZE + NodeBody.SERIALIZED_INTERNAL_SIZE;
+    pub const SERIALIZED_LEAF_SIZE = NodeHeader.SERIALIZED_SIZE + LeafNode.SERIALIZED_SIZE;
+    pub const SERIALIZED_INTERNAL_SIZE = NodeHeader.SERIALIZED_SIZE + InternalNode.SERIALIZED_SIZE;
 
     const Self = @This();
 
     pub fn new(node_type: NodeType, is_root: u8, parent: u32) Self {
-        const header = NodeHeader{ .is_root = is_root, .parent = parent };
+        const header = NodeHeader{ .is_root = is_root, .parent = parent, .node_type = node_type };
         const body = NodeBody.new(node_type);
         return .{ .header = header, .body = body };
     }
 
     pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         try self.header.serialize(stream);
-        try self.body.serialize(stream);
+        try self.body.serialize(stream, self.header.node_type);
     }
 
     pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         try self.header.deserialize(stream);
-        try self.body.deserialize(stream);
+        try self.body.deserialize(stream, self.header.node_type);
     }
 };
 
 pub const NodeHeader = struct {
     parent: u32,
     is_root: u8,
+    node_type: NodeType,
 
-    pub const SERIALIZED_SIZE = meta.sizeOfField(Self, .parent) + meta.sizeOfField(Self, .is_root);
+    pub const SERIALIZED_SIZE =
+        meta.sizeOfField(Self, .parent) +
+        meta.sizeOfField(Self, .is_root) +
+        meta.sizeOfField(Self, .node_type);
 
     const Self = @This();
 
     pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
         var writer = stream.writer();
-        try writer.writeInt(u8, self.is_root, .Little);
         try writer.writeInt(u32, self.parent, .Little);
+        try writer.writeInt(u8, self.is_root, .Little);
+        try writer.writeInt(u8, @enumToInt(self.node_type), .Little);
     }
 
     pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
         var reader = stream.reader();
-        self.is_root = try reader.readInt(u8, .Little);
         self.parent = try reader.readInt(u32, .Little);
+        self.is_root = try reader.readInt(u8, .Little);
+        self.node_type = try reader.readEnum(NodeType, .Little);
     }
 };
 
 pub const NodeType = enum(u8) { Leaf, Internal };
 
-pub const NodeBody = union(NodeType) {
+pub const NodeBody = union {
     Leaf: LeafNode,
     Internal: InternalNode,
-
-    pub const SERIALIZED_LEAF_SIZE = @sizeOf(NodeType) + LeafNode.SERIALIZED_SIZE;
-    pub const SERIALIZED_INTERNAL_SIZE = @sizeOf(NodeType) + InternalNode.SERIALIZED_SIZE;
 
     const Self = @This();
 
@@ -191,23 +194,18 @@ pub const NodeBody = union(NodeType) {
         };
     }
 
-    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8)) errors.SerializeError!void {
-        var writer = stream.writer();
-        switch (self.*) {
-            .Leaf => |leaf| {
-                try writer.writeInt(u8, @enumToInt(NodeType.Leaf), .Little);
-                try leaf.serialize(stream);
+    pub fn serialize(self: *const Self, stream: *std.io.FixedBufferStream([]u8), node_type: NodeType) errors.SerializeError!void {
+        switch (node_type) {
+            .Leaf => {
+                try self.Leaf.serialize(stream);
             },
-            .Internal => |internal| {
-                try writer.writeInt(u8, @enumToInt(NodeType.Internal), .Little);
-                try internal.serialize(stream);
+            .Internal => {
+                try self.Internal.serialize(stream);
             },
         }
     }
 
-    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8)) errors.DeserializeError!void {
-        var reader = stream.reader();
-        const node_type = try reader.readEnum(NodeType, .Little);
+    pub fn deserialize(self: *Self, stream: *std.io.FixedBufferStream([]const u8), node_type: NodeType) errors.DeserializeError!void {
         switch (node_type) {
             .Leaf => {
                 var leaf: LeafNode = undefined;
@@ -231,7 +229,6 @@ pub const LeafNode = struct {
     pub const SPACE_FOR_CELLS =
         Pager.PAGE_SIZE -
         NodeHeader.SERIALIZED_SIZE -
-        @sizeOf(NodeType) -
         @sizeOf(u32) * 2;
 
     pub const MAX_CELLS = SPACE_FOR_CELLS / LeafNodeCell.SERIALIZED_SIZE;
@@ -308,7 +305,6 @@ pub const InternalNode = struct {
     pub const SPACE_FOR_CELLS =
         Pager.PAGE_SIZE -
         NodeHeader.SERIALIZED_SIZE -
-        @sizeOf(NodeType) -
         @sizeOf(u32) * 2;
 
     pub const MAX_KEYS = SPACE_FOR_CELLS / InternalNodeCell.SERIALIZED_SIZE;
