@@ -1,13 +1,17 @@
 const std = @import("std");
 const errors = @import("errors.zig");
 const meta = @import("meta.zig");
+const squeal_pager = @import("pager.zig");
 
-const Pager = @import("pager.zig").Pager(Row, 4096, 128);
-const Node = @import("pager.zig").Node(Row, 4096);
-const NodeHeader = @import("pager.zig").NodeHeader;
-const LeafNode = @import("pager.zig").NodeLeaf(Row, 4096);
-const InternalNode = @import("pager.zig").NodeInternal(4096);
-const NodeCell = @import("pager.zig").NodeCell;
+const Pager = squeal_pager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
+const Node = squeal_pager.Node(Row, PAGE_SIZE);
+const NodeHeader = squeal_pager.NodeHeader;
+const LeafNode = squeal_pager.NodeLeaf(Row, PAGE_SIZE);
+const InternalNode = squeal_pager.NodeInternal(PAGE_SIZE);
+const NodeCell = squeal_pager.NodeCell;
+
+const PAGE_SIZE = 4096;
+const PAGE_COUNT = 128;
 
 /// A table is a collection of persistent rows stored in a B+ tree structure
 /// for fast lookups. Rows are stored in pages, which are managed by a pager

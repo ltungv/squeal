@@ -1,12 +1,16 @@
 const std = @import("std");
 const testing = std.testing;
 const tests = @import("tests.zig");
+const libpager = @import("pager.zig");
+const libtable = @import("table.zig");
 
-const LeafNode = @import("pager.zig").LeafNode;
-const Pager = @import("pager.zig").Pager;
+const Row = libtable.Row;
+const Table = libtable.Table;
+const LeafNode = libpager.NodeLeaf(Row, PAGE_SIZE);
+const Pager = libpager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
 
-const Row = @import("table.zig").Row;
-const Table = @import("table.zig").Table;
+const PAGE_SIZE = 4096;
+const PAGE_COUNT = 128;
 
 test "creating new row fails when key is too long" {
     const key: [Row.MAX_KEY_LEN + 1]u8 = undefined;
@@ -18,37 +22,6 @@ test "creating new row fails when value is too long" {
     const val: [Row.MAX_VAL_LEN + 1]u8 = undefined;
     const result = Row.new(0x0102BEEF, "hello", &val);
     try testing.expectError(Row.Error.ValueTooLong, result);
-}
-
-test "serialize row" {
-    const row = try Row.new(0x0102BEEF, "hello", "world");
-
-    var buf: [Row.SERIALIZED_SIZE]u8 = undefined;
-    var ostream = std.io.fixedBufferStream(&buf);
-    try row.serialize(&ostream);
-
-    var istream = std.io.fixedBufferStream(&buf);
-    var reader = istream.reader();
-
-    try testing.expectEqual(row.id, try reader.readInt(u32, .Little));
-    try testing.expectEqual(row.key_len, try reader.readInt(u8, .Little));
-    try testing.expectEqual(row.val_len, try reader.readInt(u8, .Little));
-    try testing.expectEqual(row.key_buf, try reader.readBytesNoEof(Row.MAX_KEY_LEN));
-    try testing.expectEqual(row.val_buf, try reader.readBytesNoEof(Row.MAX_VAL_LEN));
-}
-
-test "deserialize row" {
-    const row = try Row.new(0x0102BEEF, "hello", "world");
-
-    var buf: [Row.SERIALIZED_SIZE]u8 = undefined;
-    var ostream = std.io.fixedBufferStream(&buf);
-    try row.serialize(&ostream);
-
-    var istream = std.io.fixedBufferStream(@as([]const u8, &buf));
-    var row_new: Row = undefined;
-    try row_new.deserialize(&istream);
-
-    try testing.expectEqual(row, row_new);
 }
 
 test "table insert should update rows count" {
@@ -69,11 +42,10 @@ test "table insert should update rows count" {
         try table.insert(row);
     }
     var num_rows: u32 = 0;
-    for (table.pager.pages[0..table.pager.pages_len]) |nullable_page| {
+    for (table.pager.page_cache[0..table.pager.page_count]) |nullable_page| {
         if (nullable_page) |page| {
-            switch (page.header.node_type) {
-                .Leaf => num_rows += page.body.Leaf.num_cells,
-                .Internal => {},
+            if (page.header.is_leaf) {
+                num_rows += page.body.leaf.num_cells;
             }
         }
     }

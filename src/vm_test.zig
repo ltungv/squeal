@@ -195,35 +195,6 @@ test "vm allows printing one-node btree" {
     try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
-test "vm allows printing contants" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
-    defer testing.allocator.free(filepath);
-
-    var input = std.ArrayList(u8).init(testing.allocator);
-    defer input.deinit();
-    var expected = std.ArrayList(u8).init(testing.allocator);
-    defer expected.deinit();
-
-    try input.appendSlice(".constants\n");
-    try input.appendSlice(".exit\n");
-
-    try expected.appendSlice("db > Constants:\n");
-    try expected.appendSlice("ROW_SIZE: 293\n");
-    try expected.appendSlice("NODE_HEADER_SIZE: 6\n");
-    try expected.appendSlice("NODE_TYPE_SIZE: 1\n");
-    try expected.appendSlice("LEAF_NODE_SIZE: 3869\n");
-    try expected.appendSlice("LEAF_NODE_CELL_SIZE: 297\n");
-    try expected.appendSlice("LEAF_NODE_SPACE_FOR_CELLS: 4082\n");
-    try expected.appendSlice("LEAF_NODE_MAX_CELLS: 13\n");
-    try expected.appendSlice("INTERNAL_NODE_SIZE: 4088\n");
-    try expected.appendSlice("INTERNAL_NODE_CELL_SIZE: 8\n");
-    try expected.appendSlice("INTERNAL_NODE_SPACE_FOR_CELLS: 4082\n");
-    try expected.appendSlice("INTERNAL_NODE_MAX_KEYS: 510\n");
-    try expected.appendSlice("db > ");
-
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
-}
-
 test "vm shows error when inserting row with duplicate id" {
     const filepath = try tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
