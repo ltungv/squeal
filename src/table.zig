@@ -1,5 +1,4 @@
 const std = @import("std");
-const errors = @import("errors.zig");
 const meta = @import("meta.zig");
 const squeal_pager = @import("pager.zig");
 
