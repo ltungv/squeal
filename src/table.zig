@@ -180,7 +180,7 @@ pub const Table = struct {
     /// - `val`: The value of the new cell.
     fn leafInsert(self: *Self, node: *Node, cell: u32, key: u32, val: *const Row) Error!void {
         const node_body = &node.body.leaf;
-        if (node_body.num_cells >= node_body.cells.len) {
+        if (node_body.num_cells >= LeafNode.MAX_CELLS) {
             // Leaf is full so we split.
             try self.leafSplitInsert(node, cell, key, val);
         } else {
