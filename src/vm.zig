@@ -70,7 +70,7 @@ pub const Vm = struct {
                     try self.stream.print("Tree:\n");
                     try self.printTree(self.table.root_page, 0);
                 },
-                .Constants => try self.printConstants(),
+                .Constants => {},
                 .Exit => return true,
             },
             .Query => |query| {
@@ -103,48 +103,45 @@ pub const Vm = struct {
     }
 
     fn printTree(self: *Self, page_num: u32, indentation: usize) Error!void {
-        const page = try self.table.pager.getPage(page_num);
-        switch (page.header.node_type) {
-            .Leaf => {
-                const leaf = &page.body.Leaf;
-                try self.printIndentation(indentation);
-                try self.stream.printf("- leaf (size {d})\n", .{leaf.num_cells});
+        const page = try self.table.pager.get(page_num);
+        if (page.header.is_leaf) {
+            const leaf = &page.body.leaf;
+            try self.printIndentation(indentation);
+            try self.stream.printf("- leaf (size {d})\n", .{leaf.num_cells});
 
-                var cell_num: u32 = 0;
-                while (cell_num < leaf.num_cells) : (cell_num += 1) {
-                    try self.printIndentation(indentation + 1);
-                    try self.stream.printf("  - {d}\n", .{leaf.cells[cell_num].key});
-                }
-            },
-            .Internal => {
-                const internal = &page.body.Internal;
-                try self.printIndentation(indentation);
-                try self.stream.printf("- internal (size {d})\n", .{internal.num_keys});
+            var cell_num: u32 = 0;
+            while (cell_num < leaf.num_cells) : (cell_num += 1) {
+                try self.printIndentation(indentation + 1);
+                try self.stream.printf("  - {d}\n", .{leaf.cells[cell_num].key});
+            }
+        } else {
+            const internal = &page.body.internal;
+            try self.printIndentation(indentation);
+            try self.stream.printf("- internal (size {d})\n", .{internal.num_keys});
 
-                var cell_num: u32 = 0;
-                while (cell_num < internal.num_keys) : (cell_num += 1) {
-                    const cell = internal.cells[cell_num];
-                    try self.printTree(cell.child, indentation + 1);
-                    try self.printIndentation(indentation + 1);
-                    try self.stream.printf("- key {d}\n", .{cell.key});
-                }
-                try self.printTree(internal.right_child, indentation + 1);
-            },
+            var cell_num: u32 = 0;
+            while (cell_num < internal.num_keys) : (cell_num += 1) {
+                const cell = internal.cells[cell_num];
+                try self.printTree(cell.val, indentation + 1);
+                try self.printIndentation(indentation + 1);
+                try self.stream.printf("- key {d}\n", .{cell.key});
+            }
+            try self.printTree(internal.right_child, indentation + 1);
         }
     }
 
-    fn printConstants(self: *const Self) Error!void {
-        try self.stream.print("Constants:\n");
-        try self.stream.printf("ROW_SIZE: {d}\n", .{Row.SERIALIZED_SIZE});
-        try self.stream.printf("NODE_HEADER_SIZE: {d}\n", .{NodeHeader.SERIALIZED_SIZE});
-        try self.stream.printf("NODE_TYPE_SIZE: {d}\n", .{@sizeOf(NodeType)});
-        try self.stream.printf("LEAF_NODE_SIZE: {d}\n", .{LeafNode.SERIALIZED_SIZE});
-        try self.stream.printf("LEAF_NODE_CELL_SIZE: {d}\n", .{LeafNodeCell.SERIALIZED_SIZE});
-        try self.stream.printf("LEAF_NODE_SPACE_FOR_CELLS: {d}\n", .{LeafNode.SPACE_FOR_CELLS});
-        try self.stream.printf("LEAF_NODE_MAX_CELLS: {d}\n", .{LeafNode.MAX_CELLS});
-        try self.stream.printf("INTERNAL_NODE_SIZE: {d}\n", .{InternalNode.SERIALIZED_SIZE});
-        try self.stream.printf("INTERNAL_NODE_CELL_SIZE: {d}\n", .{InternalNodeCell.SERIALIZED_SIZE});
-        try self.stream.printf("INTERNAL_NODE_SPACE_FOR_CELLS: {d}\n", .{InternalNode.SPACE_FOR_CELLS});
-        try self.stream.printf("INTERNAL_NODE_MAX_KEYS: {d}\n", .{InternalNode.MAX_KEYS});
-    }
+    // fn printConstants(self: *const Self) Error!void {
+    //     try self.stream.print("Constants:\n");
+    //     try self.stream.printf("ROW_SIZE: {d}\n", .{Row.SERIALIZED_SIZE});
+    //     try self.stream.printf("NODE_HEADER_SIZE: {d}\n", .{NodeHeader.SERIALIZED_SIZE});
+    //     try self.stream.printf("NODE_TYPE_SIZE: {d}\n", .{@sizeOf(NodeType)});
+    //     try self.stream.printf("LEAF_NODE_SIZE: {d}\n", .{LeafNode.SERIALIZED_SIZE});
+    //     try self.stream.printf("LEAF_NODE_CELL_SIZE: {d}\n", .{LeafNodeCell.SERIALIZED_SIZE});
+    //     try self.stream.printf("LEAF_NODE_SPACE_FOR_CELLS: {d}\n", .{LeafNode.SPACE_FOR_CELLS});
+    //     try self.stream.printf("LEAF_NODE_MAX_CELLS: {d}\n", .{LeafNode.MAX_CELLS});
+    //     try self.stream.printf("INTERNAL_NODE_SIZE: {d}\n", .{InternalNode.SERIALIZED_SIZE});
+    //     try self.stream.printf("INTERNAL_NODE_CELL_SIZE: {d}\n", .{InternalNodeCell.SERIALIZED_SIZE});
+    //     try self.stream.printf("INTERNAL_NODE_SPACE_FOR_CELLS: {d}\n", .{InternalNode.SPACE_FOR_CELLS});
+    //     try self.stream.printf("INTERNAL_NODE_MAX_KEYS: {d}\n", .{InternalNode.MAX_KEYS});
+    // }
 };
