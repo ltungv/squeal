@@ -4,7 +4,6 @@ const cli = @import("cli.zig");
 const Vm = @import("vm.zig").Vm;
 
 comptime {
-    _ = @import("meta_test.zig");
     _ = @import("pager_test.zig");
     _ = @import("table_test.zig");
     _ = @import("vm_test.zig");

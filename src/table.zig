@@ -1,5 +1,4 @@
 const std = @import("std");
-const meta = @import("meta.zig");
 const squeal_pager = @import("pager.zig");
 
 const Pager = squeal_pager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
