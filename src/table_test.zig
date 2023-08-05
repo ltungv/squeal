@@ -6,7 +6,7 @@ const libtable = @import("table.zig");
 
 const Row = libtable.Row;
 const Table = libtable.Table;
-const LeafNode = libpager.NodeLeaf(Row, PAGE_SIZE);
+const NodeLeaf = libpager.NodeLeaf(Row, PAGE_SIZE);
 const Pager = libpager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
 
 const PAGE_SIZE = 4096;
@@ -60,7 +60,7 @@ test "table select should should returns all available rows" {
     defer table.deinit();
 
     var i: u32 = 0;
-    while (i < LeafNode.MAX_CELLS) : (i += 1) {
+    while (i < NodeLeaf.MAX_CELLS) : (i += 1) {
         const row = try Row.new(i, "hello", "world");
         try table.insert(&row);
     }
@@ -79,7 +79,7 @@ test "table persists between different runs" {
     const filepath = try tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
-    var expected: [LeafNode.MAX_CELLS]Row = undefined;
+    var expected: [NodeLeaf.MAX_CELLS]Row = undefined;
     for (expected) |*row, row_num| {
         row.* = try Row.new(@intCast(u32, row_num), "hello", "world");
     }

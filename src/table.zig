@@ -5,7 +5,7 @@ const squeal_pager = @import("pager.zig");
 const Pager = squeal_pager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
 const Node = squeal_pager.Node(Row, PAGE_SIZE);
 const NodeHeader = squeal_pager.NodeHeader;
-const LeafNode = squeal_pager.NodeLeaf(Row, PAGE_SIZE);
+const NodeLeaf = squeal_pager.NodeLeaf(Row, PAGE_SIZE);
 const InternalNode = squeal_pager.NodeInternal(PAGE_SIZE);
 const NodeCell = squeal_pager.NodeCell;
 
@@ -138,7 +138,7 @@ pub const Table = struct {
     fn createNewRoot(self: *Self, root: *Node, key: u32, rnode: *Node, rnode_page: u32) Error!void {
         // Allocate a new page for the left node of the new root and copy the current root
         // into it. The current root page contains the left node resulted from a previous split.
-        const lnode_page = self.pager.getFreePage();
+        const lnode_page = self.pager.getFree();
         const lnode = try self.pager.get(lnode_page);
         lnode.* = root.*;
 
@@ -183,7 +183,7 @@ pub const Table = struct {
     /// - `val`: The value of the new cell.
     fn leafInsert(self: *Self, node: *Node, cell: u32, key: u32, val: *const Row) Error!void {
         const node_body = &node.body.leaf;
-        if (node_body.num_cells >= LeafNode.MAX_CELLS) {
+        if (node_body.num_cells >= NodeLeaf.MAX_CELLS) {
             // Leaf is full so we split.
             try self.leafSplitInsert(node, cell, key, val);
         } else {
@@ -210,7 +210,7 @@ pub const Table = struct {
     /// - `key`: The key of the new cell.
     /// - `val`: The value of the new cell.
     fn leafSplitInsert(self: *Self, lnode: *Node, cell: u32, key: u32, val: *const Row) Error!void {
-        const rnode_page = self.pager.getFreePage();
+        const rnode_page = self.pager.getFree();
         const rnode = try self.pager.get(rnode_page);
         rnode.* = Node{
             .header = .{
@@ -226,17 +226,17 @@ pub const Table = struct {
         const lnode_max_key_old = try self.getTreeMaxKey(lnode);
 
         // Copy the cells of the left node into the right node while adding the new cell.
-        var idx: u32 = LeafNode.MAX_CELLS + 1;
+        var idx: u32 = NodeLeaf.MAX_CELLS + 1;
         while (idx > 0) : (idx -= 1) {
             const old_cell_id = idx - 1;
-            var cells: *[LeafNode.MAX_CELLS]NodeCell(Row) = undefined;
-            if (old_cell_id >= LeafNode.L_SPLIT_CELLS) {
+            var cells: *[NodeLeaf.MAX_CELLS]NodeCell(Row) = undefined;
+            if (old_cell_id >= NodeLeaf.L_SPLIT_CELLS) {
                 cells = &rnode_body.cells;
             } else {
                 cells = &lnode_body.cells;
             }
 
-            const new_cell_id = old_cell_id % LeafNode.L_SPLIT_CELLS;
+            const new_cell_id = old_cell_id % NodeLeaf.L_SPLIT_CELLS;
             if (old_cell_id == cell) {
                 cells[new_cell_id] = .{ .key = key, .val = val.* };
             } else if (old_cell_id > cell) {
@@ -246,8 +246,8 @@ pub const Table = struct {
             }
         }
 
-        rnode_body.num_cells = LeafNode.R_SPLIT_CELLS;
-        lnode_body.num_cells = LeafNode.L_SPLIT_CELLS;
+        rnode_body.num_cells = NodeLeaf.R_SPLIT_CELLS;
+        lnode_body.num_cells = NodeLeaf.L_SPLIT_CELLS;
         rnode_body.next_leaf = lnode_body.next_leaf;
         lnode_body.next_leaf = rnode_page;
 
@@ -313,7 +313,7 @@ pub const Table = struct {
     /// - `new_node_key`: The key of the new cell
     /// - `new_node_page`: The child of the new cell.
     fn internalSplitInsert(self: *Self, lnode: *Node, new_node_key: u32, new_node_page: u32) Error!void {
-        const rnode_page = self.pager.getFreePage();
+        const rnode_page = self.pager.getFree();
         const rnode = try self.pager.get(rnode_page);
         rnode.* = Node{
             .header = .{

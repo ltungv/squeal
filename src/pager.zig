@@ -96,13 +96,13 @@ pub fn NodeCell(comptime T: type) type {
 
 /// A pager is responsible for reading and writing pages (blocks of data) to a file.
 /// Changes made on a page are not persisted until the page is flushed.
-pub fn Pager(comptime T: type, comptime PAGE_SIZE: u32, comptime PAGE_MAX_COUNT: u32) type {
+pub fn Pager(comptime T: type, comptime PAGE_SIZE: u32, comptime PAGE_COUNT: u32) type {
     return struct {
         allocator: std.mem.Allocator,
         len: u32,
         file: std.fs.File,
         page_count: u32,
-        page_cache: [PAGE_MAX_COUNT]?*Node(T, PAGE_SIZE),
+        page_cache: [PAGE_COUNT]?*Node(T, PAGE_SIZE),
 
         /// Error that occurs when using a pager.
         pub const Error = error{
@@ -138,7 +138,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u32, comptime PAGE_MAX_COUNT:
             if (file_size % PAGE_SIZE != 0) return Error.Corrupted;
 
             // Initialize all cached pages to null.
-            var pages: [PAGE_MAX_COUNT]?*Node(T, PAGE_SIZE) = undefined;
+            var pages: [PAGE_COUNT]?*Node(T, PAGE_SIZE) = undefined;
             std.mem.set(?*Node(T, PAGE_SIZE), &pages, null);
 
             return Self{
@@ -172,7 +172,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u32, comptime PAGE_MAX_COUNT:
 
         /// Get a pointer to a cached page. If the page is not in cache, it will be read from disk.
         pub fn get(self: *Self, page_num: u32) Error!*Node(T, PAGE_SIZE) {
-            if (page_num >= PAGE_MAX_COUNT) return Error.OutOfBound;
+            if (page_num >= PAGE_COUNT) return Error.OutOfBound;
             if (self.page_cache[page_num]) |node| return node;
 
             var page = try self.allocator.create(Node(T, PAGE_SIZE));
@@ -192,7 +192,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u32, comptime PAGE_MAX_COUNT:
             return page;
         }
 
-        pub fn getFreePage(self: *const Self) u32 {
+        pub fn getFree(self: *const Self) u32 {
             return self.page_count;
         }
     };

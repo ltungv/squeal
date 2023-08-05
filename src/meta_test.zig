@@ -4,7 +4,7 @@ const pager = @import("pager.zig");
 const table = @import("table.zig");
 
 const NodeHeader = pager.NodeHeader;
-const LeafNode = pager.LeafNode;
+const NodeLeaf = pager.NodeLeaf;
 const Row = table.Row;
 
 test "sizeOfField" {
