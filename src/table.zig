@@ -1,8 +1,8 @@
 const std = @import("std");
 const squeal_pager = @import("pager.zig");
 
-const PAGE_SIZE = 4096;
-const PAGE_COUNT = 128;
+const PAGE_SIZE = 64 * 1024;
+const PAGE_COUNT = 64 * 1024;
 
 const Node = squeal_pager.Node(Row, PAGE_SIZE);
 const NodeType = squeal_pager.NodeType;
@@ -403,7 +403,7 @@ pub const Row = extern struct {
     key_buf: [MAX_KEY_LEN]u8,
     val_buf: [MAX_VAL_LEN]u8,
 
-    pub const MAX_KEY_LEN = (1 << 5);
+    pub const MAX_KEY_LEN = (1 << 8) - 1;
     pub const MAX_VAL_LEN = (1 << 8) - 1;
 
     pub const Error = error{ KeyTooLong, ValueTooLong };
