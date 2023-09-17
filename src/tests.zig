@@ -1,4 +1,5 @@
 const std = @import("std");
+const squeal_table = @import("table.zig");
 const squeal_vm = @import("vm.zig");
 
 comptime {
@@ -30,9 +31,13 @@ pub fn expectVmOutputGivenInput(allocator: std.mem.Allocator, path: []const u8, 
     var ostream = std.io.StreamSource{ .buffer = std.io.fixedBufferStream(output) };
     const stream = squeal_vm.Stream.new(&istream, &ostream);
 
-    var vm = try squeal_vm.Vm.init(allocator, &stream, path);
-    defer vm.deinit();
-    try vm.run();
+    var pager = try squeal_table.Pager.init(allocator, path);
+    defer pager.deinit();
 
+    var table = try squeal_table.Table.init(&pager);
+    defer table.deinit();
+
+    var vm = try squeal_vm.Vm.init(allocator, &stream, &table);
+    try vm.run();
     try std.testing.expectEqualStrings(expected, output);
 }

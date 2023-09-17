@@ -8,23 +8,22 @@ pub const MAX_LINE_BUFFER_SIZE = 1024;
 pub const Vm = struct {
     allocator: std.mem.Allocator,
     stream: *const Stream,
-    table: squeal_table.Table,
+    table: *squeal_table.Table,
 
     // VM's error.
     const Error = Stream.ReadError || Stream.WriteError || squeal_table.Table.Error;
 
     // Create a new VM.
-    pub fn init(allocator: std.mem.Allocator, stream: *const Stream, path: []const u8) Error!@This() {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        stream: *const Stream,
+        table: *squeal_table.Table,
+    ) Error!@This() {
         return .{
             .allocator = allocator,
             .stream = stream,
-            .table = try squeal_table.Table.init(allocator, path),
+            .table = table,
         };
-    }
-
-    // Deinitialize the VM.
-    pub fn deinit(this: *@This()) void {
-        this.table.deinit();
     }
 
     pub fn run(this: *@This()) Error!void {

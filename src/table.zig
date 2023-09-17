@@ -4,7 +4,6 @@ const squeal_pager = @import("pager.zig");
 const PAGE_SIZE = 4096;
 const PAGE_COUNT = 128;
 
-const Pager = squeal_pager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
 const Node = squeal_pager.Node(Row, PAGE_SIZE);
 const NodeType = squeal_pager.NodeType;
 const NodeHeader = squeal_pager.NodeHeader;
@@ -12,11 +11,13 @@ const NodeLeaf = squeal_pager.NodeLeaf(Row, PAGE_SIZE);
 const NodeInternal = squeal_pager.NodeInternal(PAGE_SIZE);
 const NodeCell = squeal_pager.NodeCell;
 
+pub const Pager = squeal_pager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
+
 /// A table is a collection of persistent rows stored in a B+ tree structure
 /// for fast lookups. Rows are stored in pages, which are managed by a pager
 /// that caches pages and flushes them to disk when needed.
 pub const Table = struct {
-    pager: Pager,
+    pager: *Pager,
     root_page: u32,
 
     /// Error that occurs when working with a table.
@@ -27,8 +28,7 @@ pub const Table = struct {
 
     /// Initialize a new table backed by the given allocator and the file at
     /// the given path.
-    pub fn init(allocator: std.mem.Allocator, path: []const u8) Error!@This() {
-        var pager = try Pager.init(allocator, path);
+    pub fn init(pager: *Pager) Error!@This() {
         if (pager.page_count == 0) {
             // Initialize a fresh table.
             var root = try pager.get(0);
@@ -57,8 +57,6 @@ pub const Table = struct {
             this.pager.page_cache[page_num] = null;
             this.pager.allocator.destroy(page);
         }
-        // Release all resources held by the pager.
-        this.pager.deinit();
     }
 
     /// Insert a new row into the table. Changes are not persisted until the
@@ -127,20 +125,17 @@ pub const Table = struct {
     /// - `rnode`: The right child node of the new root.
     /// - `rnode_page`: The page number of the right child node.
     fn createNewRoot(this: *@This(), root: *Node, key: u32, rnode: *Node, rnode_page: u32) Error!void {
-        // Allocate a new page for the left node of the new root.
+        // Allocate a new page for the left node of the new root, then copy the
+        // current root into the left node. The current root page contains the
+        // left node resulted from a previous split.
         const lnode_page = this.pager.getFree();
         const lnode = try this.pager.get(lnode_page);
-
-        // Copy the current root into the left node. The current root page
-        // contains the left node resulted from a previous split.
         lnode.* = root.*;
-
         // Update the root of each child.
         lnode.header.is_root = false;
-        rnode.header.is_root = false;
         lnode.header.parent = this.root_page;
+        rnode.header.is_root = false;
         rnode.header.parent = this.root_page;
-
         // Initialize a new root node.
         root.* = .{
             .header = .{
@@ -158,7 +153,6 @@ pub const Table = struct {
         };
         root.body.internal.cells[0].val = @intCast(lnode_page);
         root.body.internal.cells[0].key = key;
-
         // Update children the left node if it's an internal node. The children
         // of the right node should have their parent pointers updated by the
         // previous routine(s).
@@ -183,19 +177,18 @@ pub const Table = struct {
     fn leafInsert(this: *@This(), node: *Node, cell: u32, key: u32, val: *const Row) Error!void {
         if (node.body.leaf.num_cells >= NodeLeaf.MAX_CELLS) {
             // Leaf is full so we split.
-            try this.leafSplitInsert(node, cell, key, val);
-        } else {
-            if (cell < node.body.leaf.num_cells) {
-                // Shift all cells after the insertion point 1 slot towards the
-                // end, leaving room for the new cell.
-                var idx = node.body.leaf.num_cells;
-                while (idx > cell) : (idx -= 1) {
-                    node.body.leaf.cells[idx] = node.body.leaf.cells[idx - 1];
-                }
-            }
-            node.body.leaf.num_cells += 1;
-            node.body.leaf.cells[cell] = .{ .key = key, .val = val.* };
+            return this.leafSplitInsert(node, cell, key, val);
         }
+        if (cell < node.body.leaf.num_cells) {
+            // Shift all cells after the insertion point 1 slot towards the
+            // end, leaving room for the new cell.
+            var idx = node.body.leaf.num_cells;
+            while (idx > cell) : (idx -= 1) {
+                node.body.leaf.cells[idx] = node.body.leaf.cells[idx - 1];
+            }
+        }
+        node.body.leaf.num_cells += 1;
+        node.body.leaf.cells[cell] = .{ .key = key, .val = val.* };
     }
 
     /// This function is called to insert a new cell into the given full leaf
@@ -220,8 +213,8 @@ pub const Table = struct {
             },
             .body = undefined,
         };
+        // Get largest key in the left node before the split.
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
-
         // Copy the cells of the left node into the right node while adding
         // the new cell.
         var idx: u32 = NodeLeaf.MAX_CELLS + 1;
@@ -248,12 +241,13 @@ pub const Table = struct {
                 cells[new_cell_id] = lnode.body.leaf.cells[old_cell_id];
             }
         }
-
-        lnode.body.leaf.num_cells = NodeLeaf.L_SPLIT_CELLS;
+        // Update the linked list of leaf nodes and the number of cells in each
+        // child node.
         rnode.body.leaf.num_cells = NodeLeaf.R_SPLIT_CELLS;
-        lnode.body.leaf.next_leaf = rnode_page;
         rnode.body.leaf.next_leaf = lnode.body.leaf.next_leaf;
-
+        lnode.body.leaf.num_cells = NodeLeaf.L_SPLIT_CELLS;
+        lnode.body.leaf.next_leaf = rnode_page;
+        // Get largest key in the left node after the split.
         const lnode_max_key_new = try this.getTreeMaxKey(lnode);
         if (lnode.header.is_root) {
             // Create new root because we just split a root.
@@ -333,11 +327,11 @@ pub const Table = struct {
             },
             .body = undefined,
         };
+        // Get largest key in the left node before the split.
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
-        const new_node_cell_id = lnode.body.internal.find(new_node_key);
-
         // Copy the cells of the left child into the right child while adding
         // the new cell.
+        const new_node_cell_id = lnode.body.internal.find(new_node_key);
         var idx: u32 = NodeInternal.MAX_KEYS + 1;
         while (idx > 0) : (idx -= 1) {
             var cells: *[NodeInternal.MAX_KEYS]NodeCell(u32) = undefined;
@@ -356,12 +350,10 @@ pub const Table = struct {
                 cells[new_cell_id] = lnode.body.internal.cells[old_cell_id];
             }
         }
-
         // We move the max key of the left child up to the parent. As a result,
         // the left child contains InternalNode.L_SPLIT_KEYS - 1 keys
         lnode.body.internal.num_keys = NodeInternal.L_SPLIT_KEYS - 1;
         rnode.body.internal.num_keys = NodeInternal.R_SPLIT_KEYS;
-
         if (new_node_key > lnode_max_key_old) {
             // The new child is the new right child of the right internal node
             rnode.body.internal.right_child = new_node_page;
@@ -376,7 +368,6 @@ pub const Table = struct {
         // Update the right child pointer be the child of the last cell of the
         // left internal node
         lnode.body.internal.right_child = lnode.body.internal.cells[NodeInternal.L_SPLIT_KEYS - 1].val;
-
         // Update the parent pointers of the children of the right internal node.
         const rnode_rchild = try this.pager.get(rnode.body.internal.right_child);
         rnode_rchild.header.parent = rnode_page;
@@ -384,7 +375,7 @@ pub const Table = struct {
             const rchild_child = try this.pager.get(cell.val);
             rchild_child.header.parent = rnode_page;
         }
-
+        // Get largest key in the left node before the split.
         const lnode_max_key_new = try this.getTreeMaxKey(lnode);
         if (lnode.header.is_root) {
             try this.createNewRoot(lnode, lnode_max_key_new, rnode, rnode_page);

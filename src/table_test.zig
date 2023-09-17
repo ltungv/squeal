@@ -28,7 +28,9 @@ test "table insert should update rows count" {
     const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
-    var table = try Table.init(testing.allocator, filepath);
+    var pager = try Pager.init(testing.allocator, filepath);
+    defer pager.deinit();
+    var table = try Table.init(&pager);
     defer table.deinit();
 
     const rows = [_]Row{
@@ -56,7 +58,9 @@ test "table select should should returns all available rows" {
     const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
-    var table = try Table.init(testing.allocator, filepath);
+    var pager = try Pager.init(testing.allocator, filepath);
+    defer pager.deinit();
+    var table = try Table.init(&pager);
     defer table.deinit();
 
     var i: u32 = 0;
@@ -85,7 +89,9 @@ test "table persists between different runs" {
     }
 
     {
-        var table = try Table.init(testing.allocator, filepath);
+        var pager = try Pager.init(testing.allocator, filepath);
+        defer pager.deinit();
+        var table = try Table.init(&pager);
         defer table.deinit();
 
         for (&expected) |*row| {
@@ -93,7 +99,9 @@ test "table persists between different runs" {
         }
     }
     {
-        var table = try Table.init(testing.allocator, filepath);
+        var pager = try Pager.init(testing.allocator, filepath);
+        defer pager.deinit();
+        var table = try Table.init(&pager);
         defer table.deinit();
 
         const rows = try table.select(testing.allocator);
