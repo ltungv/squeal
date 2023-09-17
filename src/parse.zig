@@ -2,11 +2,13 @@ const std = @import("std");
 const squeal_token = @import("token.zig");
 const squeal_table = @import("table.zig");
 
+// A parser for SQueaL.
 pub const Parser = struct {
     tokenizer: squeal_token.Tokenizer,
     token_prev: ?squeal_token.Token,
     token_curr: ?squeal_token.Token,
 
+    // Parse error.
     pub const Error = error{
         UnrecognizedCommand,
         UnexpectedToken,
@@ -15,6 +17,7 @@ pub const Parser = struct {
         squeal_token.Tokenizer.Error ||
         std.fmt.ParseIntError;
 
+    /// Create a new parser.
     pub fn new(src: []const u8) @This() {
         return .{
             .tokenizer = squeal_token.Tokenizer.new(src),
@@ -23,6 +26,7 @@ pub const Parser = struct {
         };
     }
 
+    /// Parse a statement.
     pub fn parse(this: *@This()) Error!Statement {
         try this.advance();
         if (try this.match(.Dot)) {
@@ -77,6 +81,7 @@ pub const Parser = struct {
         return try std.fmt.parseInt(u32, this.token_prev.?.lex, 10);
     }
 
+    // Go forward one token.
     fn advance(this: *@This()) Error!void {
         this.token_prev = this.token_curr;
         this.token_curr = try this.tokenizer.next();

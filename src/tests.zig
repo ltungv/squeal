@@ -1,5 +1,4 @@
 const std = @import("std");
-const squeal_cli = @import("cli.zig");
 const squeal_vm = @import("vm.zig");
 
 comptime {
@@ -29,7 +28,7 @@ pub fn expectVmOutputGivenInput(allocator: std.mem.Allocator, path: []const u8, 
 
     var istream = std.io.StreamSource{ .const_buffer = std.io.fixedBufferStream(input) };
     var ostream = std.io.StreamSource{ .buffer = std.io.fixedBufferStream(output) };
-    const stream = squeal_cli.Stream.new(&istream, &ostream);
+    const stream = squeal_vm.Stream.new(&istream, &ostream);
 
     var vm = try squeal_vm.Vm.init(allocator, &stream, path);
     defer vm.deinit();
