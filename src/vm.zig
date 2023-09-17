@@ -1,65 +1,59 @@
 const std = @import("std");
-const cli = @import("cli.zig");
-const libparse = @import("parse.zig");
-const libtable = @import("table.zig");
-
-const Statement = libparse.Statement;
-const Parser = libparse.Parser;
-const Table = libtable.Table;
+const squeal_cli = @import("cli.zig");
+const squeal_parse = @import("parse.zig");
+const squeal_table = @import("table.zig");
 
 pub const Vm = struct {
     allocator: std.mem.Allocator,
-    stream: *const cli.Stream,
-    table: Table,
+    stream: *const squeal_cli.Stream,
+    table: squeal_table.Table,
 
-    const Error = cli.Stream.ReadError || cli.Stream.WriteError || Table.Error;
+    const Error = squeal_cli.Stream.ReadError || squeal_cli.Stream.WriteError || squeal_table.Table.Error;
 
-    const Self = @This();
-
-    pub fn init(allocator: std.mem.Allocator, stream: *const cli.Stream, path: []const u8) Error!Self {
+    pub fn init(allocator: std.mem.Allocator, stream: *const squeal_cli.Stream, path: []const u8) Error!@This() {
         return .{
             .allocator = allocator,
             .stream = stream,
-            .table = try Table.init(allocator, path),
+            .table = try squeal_table.Table.init(allocator, path),
         };
     }
 
-    pub fn deinit(self: *Self) void {
-        self.table.deinit();
+    pub fn deinit(this: *@This()) void {
+        this.table.deinit();
     }
 
-    pub fn run(self: *Self) Error!void {
+    pub fn run(this: *@This()) Error!void {
         var finished = false;
         while (!finished) {
-            try self.stream.print("db > ");
+            try this.stream.print("db > ");
 
-            var line_buf: [cli.MAX_LINE_BUFFER_SIZE]u8 = undefined;
-            const line = self.stream.readln(&line_buf) catch |err| {
-                try self.stream.eprint(err);
+            var line_buf: [squeal_cli.MAX_LINE_BUFFER_SIZE]u8 = undefined;
+            const line = this.stream.readln(&line_buf) catch |err| {
+                try this.stream.eprint(err);
                 continue;
             } orelse {
                 continue;
             };
 
-            var parser = Parser.new(line);
+            var parser = squeal_parse.Parser.new(line);
             const statement = parser.parse() catch |err| {
-                try self.stream.eprint(err);
+                try this.stream.eprint(err);
                 continue;
             };
 
-            finished = self.exec(&statement) catch |err| {
-                try self.stream.eprint(err);
+            finished = this.exec(&statement) catch |err| {
+                try this.stream.eprint(err);
                 continue;
             };
         }
     }
 
-    fn exec(self: *Self, statement: *const Statement) Error!bool {
+    fn exec(this: *@This(), statement: *const squeal_parse.Statement) Error!bool {
         switch (statement.*) {
             .Command => |command| switch (command) {
                 .BTree => {
-                    try self.stream.print("Tree:\n");
-                    try self.printTree(self.table.root_page, 0);
+                    try this.stream.print("Tree:\n");
+                    try this.printTree(this.table.root_page, 0);
                 },
                 .Constants => {},
                 .Exit => return true,
@@ -67,57 +61,57 @@ pub const Vm = struct {
             .Query => |query| {
                 switch (query) {
                     .Select => {
-                        const rows = try self.table.select(self.allocator);
-                        defer self.allocator.free(rows);
+                        const rows = try this.table.select(this.allocator);
+                        defer this.allocator.free(rows);
 
                         for (rows) |row| {
                             const key = row.key_buf[0..row.key_len];
                             const val = row.val_buf[0..row.val_len];
-                            try self.stream.printf("({d}, {s}, {s})\n", .{ row.id, key, val });
+                            try this.stream.printf("({d}, {s}, {s})\n", .{ row.id, key, val });
                         }
                     },
                     .Insert => |q| {
-                        try self.table.insert(&q.row);
+                        try this.table.insert(&q.row);
                     },
                 }
-                try self.stream.print("Executed.\n");
+                try this.stream.print("Executed.\n");
             },
         }
         return false;
     }
 
-    fn printIndentation(self: *Self, level: usize) Error!void {
+    fn printIndentation(this: *@This(), level: usize) Error!void {
         var i = level;
         while (i > 0) : (i -= 1) {
-            try self.stream.print("  ");
+            try this.stream.print("  ");
         }
     }
 
-    fn printTree(self: *Self, page_num: u32, indentation: usize) Error!void {
-        const page = try self.table.pager.get(page_num);
+    fn printTree(this: *@This(), page_num: u32, indentation: usize) Error!void {
+        const page = try this.table.pager.get(page_num);
         if (page.header.is_leaf) {
             const leaf = &page.body.leaf;
-            try self.printIndentation(indentation);
-            try self.stream.printf("- leaf (size {d})\n", .{leaf.num_cells});
+            try this.printIndentation(indentation);
+            try this.stream.printf("- leaf (size {d})\n", .{leaf.num_cells});
 
             var cell_num: u32 = 0;
             while (cell_num < leaf.num_cells) : (cell_num += 1) {
-                try self.printIndentation(indentation + 1);
-                try self.stream.printf("  - {d}\n", .{leaf.cells[cell_num].key});
+                try this.printIndentation(indentation + 1);
+                try this.stream.printf("  - {d}\n", .{leaf.cells[cell_num].key});
             }
         } else {
             const internal = &page.body.internal;
-            try self.printIndentation(indentation);
-            try self.stream.printf("- internal (size {d})\n", .{internal.num_keys});
+            try this.printIndentation(indentation);
+            try this.stream.printf("- internal (size {d})\n", .{internal.num_keys});
 
             var cell_num: u32 = 0;
             while (cell_num < internal.num_keys) : (cell_num += 1) {
                 const cell = internal.cells[cell_num];
-                try self.printTree(cell.val, indentation + 1);
-                try self.printIndentation(indentation + 1);
-                try self.stream.printf("- key {d}\n", .{cell.key});
+                try this.printTree(cell.val, indentation + 1);
+                try this.printIndentation(indentation + 1);
+                try this.stream.printf("- key {d}\n", .{cell.key});
             }
-            try self.printTree(internal.right_child, indentation + 1);
+            try this.printTree(internal.right_child, indentation + 1);
         }
     }
 };

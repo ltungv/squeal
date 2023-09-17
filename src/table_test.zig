@@ -1,13 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
-const tests = @import("tests.zig");
-const libpager = @import("pager.zig");
-const libtable = @import("table.zig");
+const squeal_tests = @import("tests.zig");
+const squeal_pager = @import("pager.zig");
+const squeal_table = @import("table.zig");
 
-const Row = libtable.Row;
-const Table = libtable.Table;
-const NodeLeaf = libpager.NodeLeaf(Row, PAGE_SIZE);
-const Pager = libpager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
+const Row = squeal_table.Row;
+const Table = squeal_table.Table;
+const NodeLeaf = squeal_pager.NodeLeaf(Row, PAGE_SIZE);
+const Pager = squeal_pager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
 
 const PAGE_SIZE = 4096;
 const PAGE_COUNT = 128;
@@ -25,7 +25,7 @@ test "creating new row fails when value is too long" {
 }
 
 test "table insert should update rows count" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var table = try Table.init(testing.allocator, filepath);
@@ -38,7 +38,7 @@ test "table insert should update rows count" {
         try Row.new(3, "hello_3", "world_3"),
         try Row.new(4, "hello_4", "world_4"),
     };
-    for (rows) |*row| {
+    for (&rows) |*row| {
         try table.insert(row);
     }
     var num_rows: u32 = 0;
@@ -53,7 +53,7 @@ test "table insert should update rows count" {
 }
 
 test "table select should should returns all available rows" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var table = try Table.init(testing.allocator, filepath);
@@ -68,27 +68,27 @@ test "table select should should returns all available rows" {
     const rows = try table.select(testing.allocator);
     defer testing.allocator.free(rows);
 
-    for (rows) |row, row_num| {
-        try testing.expectEqual(@intCast(u32, row_num), row.id);
+    for (rows, 0..) |row, row_num| {
+        try testing.expectEqual(@as(u32, @intCast(row_num)), row.id);
         try testing.expectEqualStrings("hello", row.key_buf[0..row.key_len]);
         try testing.expectEqualStrings("world", row.val_buf[0..row.val_len]);
     }
 }
 
 test "table persists between different runs" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var expected: [NodeLeaf.MAX_CELLS]Row = undefined;
-    for (expected) |*row, row_num| {
-        row.* = try Row.new(@intCast(u32, row_num), "hello", "world");
+    for (&expected, 0..) |*row, row_num| {
+        row.* = try Row.new(@intCast(row_num), "hello", "world");
     }
 
     {
         var table = try Table.init(testing.allocator, filepath);
         defer table.deinit();
 
-        for (expected) |*row| {
+        for (&expected) |*row| {
             try table.insert(row);
         }
     }

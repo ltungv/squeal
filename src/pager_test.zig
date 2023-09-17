@@ -1,25 +1,22 @@
 const std = @import("std");
 const testing = std.testing;
+const squeal_pager = @import("pager.zig");
 
-const Pager = @import("pager.zig").Pager;
-const Node = @import("pager.zig").Node;
-const NodeLeaf = @import("pager.zig").NodeLeaf;
-
-const TestPager = Pager(u32, 4096, 64);
+const TestPager = squeal_pager.Pager(u32, 4096, 64);
 
 test "node size check" {
-    try testing.expect(@sizeOf(Node(u8, 4096)) <= 4096);
-    try testing.expect(@sizeOf(Node(u16, 4096)) <= 4096);
-    try testing.expect(@sizeOf(Node(u32, 4096)) <= 4096);
-    try testing.expect(@sizeOf(Node(u64, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(u8, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(u16, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(u32, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(u64, 4096)) <= 4096);
 
-    try testing.expect(@sizeOf(Node(i8, 4096)) <= 4096);
-    try testing.expect(@sizeOf(Node(i16, 4096)) <= 4096);
-    try testing.expect(@sizeOf(Node(i32, 4096)) <= 4096);
-    try testing.expect(@sizeOf(Node(i64, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(i8, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(i16, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(i32, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(i64, 4096)) <= 4096);
 
-    try testing.expect(@sizeOf(Node(f32, 4096)) <= 4096);
-    try testing.expect(@sizeOf(Node(f64, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(f32, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_pager.Node(f64, 4096)) <= 4096);
 }
 
 test "page init" {
@@ -48,5 +45,5 @@ test "page flush persist page" {
     defer pager.deinit();
 
     var node = try pager.get(0);
-    try testing.expectEqual(@intCast(u32, 420), node.header.parent);
+    try testing.expectEqual(@as(u32, @intCast(420)), node.header.parent);
 }

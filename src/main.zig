@@ -1,7 +1,6 @@
 const std = @import("std");
-const cli = @import("cli.zig");
-
-const Vm = @import("vm.zig").Vm;
+const squeal_cli = @import("cli.zig");
+const squeal_vm = @import("vm.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -9,9 +8,9 @@ pub fn main() !void {
 
     var istream = std.io.StreamSource{ .file = std.io.getStdIn() };
     var ostream = std.io.StreamSource{ .file = std.io.getStdOut() };
-    const stream = cli.Stream.new(&istream, &ostream);
+    const stream = squeal_cli.Stream.new(&istream, &ostream);
 
-    var vm = try Vm.init(gpa.allocator(), &stream, "./db.squeal");
+    var vm = try squeal_vm.Vm.init(gpa.allocator(), &stream, "./db.squeal");
     defer vm.deinit();
     try vm.run();
 }

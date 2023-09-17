@@ -8,11 +8,9 @@ pub const Tokenizer = struct {
 
     pub const Error = error{UnexpectedByte};
 
-    const Self = @This();
-
     /// Initialize a new Squeal tokenizer.
-    pub fn new(src: []const u8) Self {
-        return Self{
+    pub fn new(src: []const u8) @This() {
+        return .{
             .src = src,
             .lexeme_head = 0,
             .lexeme_tail = 0,
@@ -20,20 +18,20 @@ pub const Tokenizer = struct {
     }
 
     /// Returns the next token in the source code.
-    pub fn next(self: *Self) Error!?Token {
-        self.skipWhitespace();
-        const byte = self.advance() orelse return null;
+    pub fn next(this: *@This()) Error!?Token {
+        this.skipWhitespace();
+        const byte = this.advance() orelse return null;
         if (byte == '.') {
-            return self.makeToken(.Dot);
+            return this.makeToken(.Dot);
         }
         if (byte == '\'') {
-            return try self.string();
+            return try this.string();
         }
         if (byte == '-' or std.ascii.isDigit(byte)) {
-            return try self.integer();
+            return try this.integer();
         }
         if (std.ascii.isAlphabetic(byte)) {
-            return try self.identity();
+            return try this.identity();
         }
         return Error.UnexpectedByte;
     }
@@ -42,20 +40,20 @@ pub const Tokenizer = struct {
         return byte == '\'';
     }
 
-    fn string(self: *Self) Error!Token {
-        while (!self.peekCheck(Self.isSingleQuote)) {
-            _ = self.advance();
+    fn string(this: *@This()) Error!Token {
+        while (!this.peekCheck(@This().isSingleQuote)) {
+            _ = this.advance();
         }
-        try self.consume('\'');
-        return self.makeToken(.String);
+        try this.consume('\'');
+        return this.makeToken(.String);
     }
 
-    fn identity(self: *Self) Error!Token {
-        while (self.peekCheck(std.ascii.isAlphabetic)) {
-            _ = self.advance();
+    fn identity(this: *@This()) Error!Token {
+        while (this.peekCheck(std.ascii.isAlphabetic)) {
+            _ = this.advance();
         }
         var typ = TokenType.Ident;
-        const lex = self.src[self.lexeme_head..self.lexeme_tail];
+        const lex = this.src[this.lexeme_head..this.lexeme_tail];
         if (std.mem.eql(u8, lex, "select")) {
             typ = .Select;
         }
@@ -65,61 +63,61 @@ pub const Tokenizer = struct {
         if (std.mem.eql(u8, lex, "null")) {
             typ = .Null;
         }
-        return self.makeToken(typ);
+        return this.makeToken(typ);
     }
 
-    fn integer(self: *Self) Error!Token {
-        while (self.peekCheck(std.ascii.isDigit)) {
-            _ = self.advance();
+    fn integer(this: *@This()) Error!Token {
+        while (this.peekCheck(std.ascii.isDigit)) {
+            _ = this.advance();
         }
-        return self.makeToken(.Integer);
+        return this.makeToken(.Integer);
     }
 
-    fn makeToken(self: *const Self, typ: TokenType) Token {
-        const lex = self.src[self.lexeme_head..self.lexeme_tail];
+    fn makeToken(this: *const @This(), typ: TokenType) Token {
+        const lex = this.src[this.lexeme_head..this.lexeme_tail];
         return Token{ .typ = typ, .lex = lex };
     }
 
-    fn skipWhitespace(self: *Self) void {
-        while (self.peek()) |byte| {
+    fn skipWhitespace(this: *@This()) void {
+        while (this.peek()) |byte| {
             if (byte == ' ' or byte == '\r' or byte == '\t' or byte == '\n') {
-                _ = self.advance();
+                _ = this.advance();
             } else {
                 break;
             }
         }
-        self.lexeme_head = self.lexeme_tail;
+        this.lexeme_head = this.lexeme_tail;
     }
 
-    fn advance(self: *Self) ?u8 {
-        const byte = self.peek() orelse return null;
-        self.lexeme_tail += 1;
+    fn advance(this: *@This()) ?u8 {
+        const byte = this.peek() orelse return null;
+        this.lexeme_tail += 1;
         return byte;
     }
 
-    fn consume(self: *Self, expected: u8) Error!void {
-        const byte = self.advance() orelse return Error.UnexpectedByte;
+    fn consume(this: *@This(), expected: u8) Error!void {
+        const byte = this.advance() orelse return Error.UnexpectedByte;
         if (byte != expected) {
             return Error.UnexpectedByte;
         }
     }
 
-    fn peek(self: *const Self) ?u8 {
-        if (self.lexeme_tail >= self.src.len) {
+    fn peek(this: *const @This()) ?u8 {
+        if (this.lexeme_tail >= this.src.len) {
             return null;
         }
-        return self.src[self.lexeme_tail];
+        return this.src[this.lexeme_tail];
     }
 
-    fn peekNext(self: *const Self) ?u8 {
-        if (self.lexeme_tail + 1 >= self.src.len) {
+    fn peekNext(this: *const @This()) ?u8 {
+        if (this.lexeme_tail + 1 >= this.src.len) {
             return null;
         }
-        return self.src[self.lexeme_tail + 1];
+        return this.src[this.lexeme_tail + 1];
     }
 
-    fn peekCheck(self: *const Self, comptime predicate_fn: fn (u8) bool) bool {
-        const byte = self.peek() orelse return false;
+    fn peekCheck(this: *const @This(), comptime predicate_fn: fn (u8) bool) bool {
+        const byte = this.peek() orelse return false;
         return predicate_fn(byte);
     }
 };

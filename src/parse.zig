@@ -1,42 +1,41 @@
 const std = @import("std");
-const Tokenizer = @import("token.zig").Tokenizer;
-const Token = @import("token.zig").Token;
-const TokenType = @import("token.zig").TokenType;
-const Row = @import("table.zig").Row;
+const squeal_token = @import("token.zig");
+const squeal_table = @import("table.zig");
 
 pub const Parser = struct {
-    tokenizer: Tokenizer,
-    token_prev: ?Token,
-    token_curr: ?Token,
+    tokenizer: squeal_token.Tokenizer,
+    token_prev: ?squeal_token.Token,
+    token_curr: ?squeal_token.Token,
 
     pub const Error = error{
         UnrecognizedCommand,
         UnexpectedToken,
     } ||
-        Row.Error ||
-        Tokenizer.Error ||
+        squeal_table.Row.Error ||
+        squeal_token.Tokenizer.Error ||
         std.fmt.ParseIntError;
 
-    const Self = @This();
-
-    pub fn new(src: []const u8) Self {
-        return Self{ .tokenizer = Tokenizer.new(src), .token_prev = null, .token_curr = null };
+    pub fn new(src: []const u8) @This() {
+        return .{
+            .tokenizer = squeal_token.Tokenizer.new(src),
+            .token_prev = null,
+            .token_curr = null,
+        };
     }
 
-    pub fn parse(self: *Self) Error!Statement {
-        try self.advance();
-        if (try self.match(.Dot)) {
-            return self.metaCommand();
+    pub fn parse(this: *@This()) Error!Statement {
+        try this.advance();
+        if (try this.match(.Dot)) {
+            return this.metaCommand();
         }
-        return self.statement();
+        return this.statement();
     }
 
-    fn metaCommand(self: *Self) Error!Statement {
-        if (!try self.match(.Ident)) {
+    fn metaCommand(this: *@This()) Error!Statement {
+        if (!try this.match(.Ident)) {
             return Error.UnexpectedToken;
         }
-        const command_name = self.token_prev orelse unreachable;
-
+        const command_name = this.token_prev orelse unreachable;
         if (std.mem.eql(u8, command_name.lex, "btree")) {
             return Statement{ .Command = CommandStatement.BTree };
         }
@@ -49,50 +48,50 @@ pub const Parser = struct {
         return Error.UnrecognizedCommand;
     }
 
-    fn statement(self: *Self) Error!Statement {
-        if (try self.match(.Select)) {
-            return Statement{ .Query = .{ .Select = .{} } };
+    fn statement(this: *@This()) Error!Statement {
+        if (try this.match(.Select)) {
+            return Statement{ .Query = .{ .Select = {} } };
         }
-        if (try self.match(.Insert)) {
-            const row_id = try self.integer();
-            const row_key = try self.string();
-            const row_val = try self.string();
-            const row = try Row.new(row_id, row_key, row_val);
+        if (try this.match(.Insert)) {
+            const row_id = try this.integer();
+            const row_key = try this.string();
+            const row_val = try this.string();
+            const row = try squeal_table.Row.new(row_id, row_key, row_val);
             return Statement{ .Query = .{ .Insert = .{ .row = row } } };
         }
         return Error.UnrecognizedCommand;
     }
 
-    fn string(self: *Self) Error![]const u8 {
-        if (!try self.match(.String)) {
+    fn string(this: *@This()) Error![]const u8 {
+        if (!try this.match(.String)) {
             return Error.UnexpectedToken;
         }
-        const s = self.token_prev.?.lex;
+        const s = this.token_prev.?.lex;
         return s[1 .. s.len - 1];
     }
 
-    fn integer(self: *Self) Error!u32 {
-        if (!try self.match(.Integer)) {
+    fn integer(this: *@This()) Error!u32 {
+        if (!try this.match(.Integer)) {
             return Error.UnexpectedToken;
         }
-        return try std.fmt.parseInt(u32, self.token_prev.?.lex, 10);
+        return try std.fmt.parseInt(u32, this.token_prev.?.lex, 10);
     }
 
-    fn advance(self: *Self) Error!void {
-        self.token_prev = self.token_curr;
-        self.token_curr = try self.tokenizer.next();
+    fn advance(this: *@This()) Error!void {
+        this.token_prev = this.token_curr;
+        this.token_curr = try this.tokenizer.next();
     }
 
-    fn match(self: *Self, token_type: TokenType) Error!bool {
-        const matched = self.check(token_type);
+    fn match(this: *@This(), token_type: squeal_token.TokenType) Error!bool {
+        const matched = this.check(token_type);
         if (matched) {
-            try self.advance();
+            try this.advance();
         }
         return matched;
     }
 
-    fn check(self: *const Self, token_type: TokenType) bool {
-        if (self.token_curr) |token| {
+    fn check(this: *const @This(), token_type: squeal_token.TokenType) bool {
+        if (this.token_curr) |token| {
             return token.typ == token_type;
         }
         return false;
@@ -122,11 +121,9 @@ pub const QueryStatementType = enum {
 
 pub const QueryStatement = union(QueryStatementType) {
     Insert: InsertQuery,
-    Select: SelectQuery,
+    Select: void,
 };
 
 pub const InsertQuery = struct {
-    row: Row,
+    row: squeal_table.Row,
 };
-
-pub const SelectQuery = struct {};

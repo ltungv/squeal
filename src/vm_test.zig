@@ -1,15 +1,10 @@
 const std = @import("std");
 const testing = std.testing;
-const tests = @import("tests.zig");
-
-const Pager = @import("pager.zig").Pager;
-const LeafNode = @import("pager.zig").LeafNode;
-
-const Table = @import("table.zig").Table;
-const Row = @import("table.zig").Row;
+const squeal_tests = @import("tests.zig");
+const squeal_table = @import("table.zig");
 
 test "vm run .exit" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var input = std.ArrayList(u8).init(testing.allocator);
@@ -20,11 +15,11 @@ test "vm run .exit" {
     try input.appendSlice(".exit\n");
     try expected.appendSlice("db > ");
 
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+    try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
 test "vm run empty line" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var input = std.ArrayList(u8).init(testing.allocator);
@@ -37,11 +32,11 @@ test "vm run empty line" {
     try expected.appendSlice("db > error.UnrecognizedCommand\n");
     try expected.appendSlice("db > ");
 
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+    try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
 test "vm run single insert then select" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var input = std.ArrayList(u8).init(testing.allocator);
@@ -57,11 +52,11 @@ test "vm run single insert then select" {
     try expected.appendSlice("Executed.\n");
     try expected.appendSlice("db > ");
 
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+    try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
 test "vm run max key and value size insert" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var input = std.ArrayList(u8).init(testing.allocator);
@@ -69,10 +64,10 @@ test "vm run max key and value size insert" {
     var expected = std.ArrayList(u8).init(testing.allocator);
     defer expected.deinit();
 
-    var max_size_key: [Row.MAX_KEY_LEN]u8 = undefined;
-    std.mem.set(u8, &max_size_key, 'a');
-    var max_size_val: [Row.MAX_VAL_LEN]u8 = undefined;
-    std.mem.set(u8, &max_size_val, 'a');
+    var max_size_key: [squeal_table.Row.MAX_KEY_LEN]u8 = undefined;
+    @memset(&max_size_key, 'a');
+    var max_size_val: [squeal_table.Row.MAX_VAL_LEN]u8 = undefined;
+    @memset(&max_size_val, 'a');
     const insert = try std.fmt.allocPrint(testing.allocator, "insert 1 '{s}' '{s}'\n", .{ max_size_key, max_size_val });
 
     defer testing.allocator.free(insert);
@@ -81,11 +76,11 @@ test "vm run max key and value size insert" {
     try expected.appendSlice("db > Executed.\n");
     try expected.appendSlice("db > ");
 
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+    try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
 test "vm run long key insert" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var input = std.ArrayList(u8).init(testing.allocator);
@@ -93,8 +88,8 @@ test "vm run long key insert" {
     var expected = std.ArrayList(u8).init(testing.allocator);
     defer expected.deinit();
 
-    var long_key: [Row.MAX_KEY_LEN + 1]u8 = undefined;
-    std.mem.set(u8, &long_key, 'a');
+    var long_key: [squeal_table.Row.MAX_KEY_LEN + 1]u8 = undefined;
+    @memset(&long_key, 'a');
     const long_key_insert = try std.fmt.allocPrint(testing.allocator, "insert 1 '{s}' 'value'\n", .{long_key});
     defer testing.allocator.free(long_key_insert);
 
@@ -103,11 +98,11 @@ test "vm run long key insert" {
     try expected.appendSlice("db > error.KeyTooLong\n");
     try expected.appendSlice("db > ");
 
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+    try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
 test "vm run long value insert" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var input = std.ArrayList(u8).init(testing.allocator);
@@ -115,8 +110,8 @@ test "vm run long value insert" {
     var expected = std.ArrayList(u8).init(testing.allocator);
     defer expected.deinit();
 
-    var long_value: [Row.MAX_VAL_LEN + 1]u8 = undefined;
-    std.mem.set(u8, &long_value, 'a');
+    var long_value: [squeal_table.Row.MAX_VAL_LEN + 1]u8 = undefined;
+    @memset(&long_value, 'a');
     const long_value_insert = try std.fmt.allocPrint(testing.allocator, "insert 1 'key' '{s}'\n", .{long_value});
     defer testing.allocator.free(long_value_insert);
 
@@ -125,11 +120,11 @@ test "vm run long value insert" {
     try expected.appendSlice("db > error.ValueTooLong\n");
     try expected.appendSlice("db > ");
 
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+    try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
 test "vm keeps data on reopen after closing" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
     {
         var input = std.ArrayList(u8).init(testing.allocator);
@@ -146,7 +141,7 @@ test "vm keeps data on reopen after closing" {
         try expected.appendSlice("db > Executed.\n");
         try expected.appendSlice("db > ");
 
-        try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+        try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
     }
     {
         var input = std.ArrayList(u8).init(testing.allocator);
@@ -162,12 +157,12 @@ test "vm keeps data on reopen after closing" {
         try expected.appendSlice("Executed.\n");
         try expected.appendSlice("db > ");
 
-        try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+        try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
     }
 }
 
 test "vm allows printing one-node btree" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var input = std.ArrayList(u8).init(testing.allocator);
@@ -192,11 +187,11 @@ test "vm allows printing one-node btree" {
     try input.appendSlice(".exit\n");
     try expected.appendSlice("db > ");
 
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+    try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
 
 test "vm shows error when inserting row with duplicate id" {
-    const filepath = try tests.randomTemporaryFilePath(testing.allocator);
+    const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
 
     var input = std.ArrayList(u8).init(testing.allocator);
@@ -211,5 +206,5 @@ test "vm shows error when inserting row with duplicate id" {
     try expected.appendSlice("db > error.DuplicateKey\n");
     try expected.appendSlice("db > ");
 
-    try tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
+    try squeal_tests.expectVmOutputGivenInput(testing.allocator, filepath, expected.items, input.items);
 }
