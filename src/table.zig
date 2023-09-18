@@ -348,12 +348,12 @@ pub const Table = struct {
         }
         // Update the parent pointers of the children of the right internal
         // node. At this point, all the children are pointing to the left node.
+        const rnode_rchild = try this.pager.get(rnode.body.internal.right_child);
+        rnode_rchild.header.parent = rnode_page;
         for (rnode.body.internal.cells[0..rnode.body.internal.num_keys]) |index| {
             const rchild_child = try this.pager.get(index.val);
             rchild_child.header.parent = rnode_page;
         }
-        const rnode_rchild = try this.pager.get(rnode.body.internal.right_child);
-        rnode_rchild.header.parent = rnode_page;
         // Propagate changes to upper levels.
         const lnode_max_key_new = try this.getTreeMaxKey(lnode);
         if (lnode.header.is_root) {
