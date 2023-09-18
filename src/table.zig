@@ -226,9 +226,9 @@ pub const Table = struct {
         // Allocate a new leaf node for the right child.
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
-        rnode.* = Node{
+        rnode.* = .{
             .header = .{ .parent = lnode.header.parent, .is_root = false, .type = NodeType.Leaf },
-            .body = undefined,
+            .body = .{ .leaf = undefined },
         };
         // Insert the new cell while splitting the node evenly. We track the
         // max key of the left node before and after the split to update the
@@ -308,13 +308,13 @@ pub const Table = struct {
         // Allocate the new right child.
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
-        rnode.* = Node{
+        rnode.* = .{
             .header = .{
                 .parent = lnode.header.parent,
                 .is_root = false,
                 .type = NodeType.Internal,
             },
-            .body = undefined,
+            .body = .{ .internal = undefined },
         };
         // Insert the new cell while splitting the node evenly. We track the
         // max key of the left node before and after the split to update the
