@@ -68,8 +68,8 @@ test "vm run max key and value size insert" {
     @memset(&max_size_key, 'a');
     var max_size_val: [squeal_table.Row.MAX_VAL_LEN]u8 = undefined;
     @memset(&max_size_val, 'a');
-    const insert = try std.fmt.allocPrint(testing.allocator, "insert 1 '{s}' '{s}'\n", .{ max_size_key, max_size_val });
 
+    const insert = try std.fmt.allocPrint(testing.allocator, "insert 1 '{s}' '{s}'\n", .{ max_size_key, max_size_val });
     defer testing.allocator.free(insert);
     try input.appendSlice(insert);
     try input.appendSlice(".exit\n");
