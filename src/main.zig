@@ -14,7 +14,9 @@ pub fn main() !void {
     defer pager.deinit();
 
     var table = try squeal_table.Table.init(&pager);
-    defer table.deinit();
+    defer table.deinit() catch |err| {
+        std.log.err("couldn't deinitialize the table: {!}", .{err});
+    };
 
     var vm = try squeal_vm.Vm.init(gpa.allocator(), &stream, &table);
     try vm.run();

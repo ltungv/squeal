@@ -2,13 +2,13 @@ const std = @import("std");
 const squeal_token = @import("token.zig");
 const squeal_table = @import("table.zig");
 
-// A parser for SQueaL.
+/// A parser for Squeal.
 pub const Parser = struct {
     tokenizer: squeal_token.Tokenizer,
     token_prev: ?squeal_token.Token,
     token_curr: ?squeal_token.Token,
 
-    // Parse error.
+    /// Parse error.
     pub const Error = error{
         UnrecognizedCommand,
         UnexpectedToken,
@@ -103,32 +103,38 @@ pub const Parser = struct {
     }
 };
 
+/// All types of statements.
 pub const StatementType = enum {
     Command,
     Query,
 };
 
+/// A statement.
 pub const Statement = union(StatementType) {
     Command: CommandStatement,
     Query: QueryStatement,
 };
 
+/// A command statement.
 pub const CommandStatement = enum {
     BTree,
     Constants,
     Exit,
 };
 
+/// All types of query statements.
 pub const QueryStatementType = enum {
     Insert,
     Select,
 };
 
+/// A query statement.
 pub const QueryStatement = union(QueryStatementType) {
     Insert: InsertQuery,
     Select: void,
 };
 
+/// An insert query.
 pub const InsertQuery = struct {
     row: squeal_table.Row,
 };

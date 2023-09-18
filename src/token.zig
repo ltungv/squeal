@@ -122,11 +122,13 @@ pub const Tokenizer = struct {
     }
 };
 
+/// A token in our Squeal.
 pub const Token = struct {
     typ: TokenType,
     lex: []const u8,
 };
 
+/// All types of tokens in our Squeal.
 pub const TokenType = enum {
     Dot,
     Select,

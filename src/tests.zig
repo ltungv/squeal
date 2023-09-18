@@ -1,4 +1,5 @@
 const std = @import("std");
+const testing = std.testing;
 const squeal_table = @import("table.zig");
 const squeal_vm = @import("vm.zig");
 
@@ -35,7 +36,7 @@ pub fn expectVmOutputGivenInput(allocator: std.mem.Allocator, path: []const u8, 
     defer pager.deinit();
 
     var table = try squeal_table.Table.init(&pager);
-    defer table.deinit();
+    defer table.deinit() catch unreachable;
 
     var vm = try squeal_vm.Vm.init(allocator, &stream, &table);
     try vm.run();

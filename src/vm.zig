@@ -10,10 +10,10 @@ pub const Vm = struct {
     stream: *const Stream,
     table: *squeal_table.Table,
 
-    // VM's error.
+    /// VM's error.
     const Error = Stream.ReadError || Stream.WriteError || squeal_table.Table.Error;
 
-    // Create a new VM.
+    /// Create a new VM.
     pub fn init(
         allocator: std.mem.Allocator,
         stream: *const Stream,
@@ -26,6 +26,7 @@ pub const Vm = struct {
         };
     }
 
+    /// Run the VM which repeatedly reads a line from the stream, parses it, and executes it.
     pub fn run(this: *@This()) Error!void {
         var finished = false;
         while (!finished) {

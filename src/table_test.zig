@@ -6,11 +6,8 @@ const squeal_table = @import("table.zig");
 
 const Row = squeal_table.Row;
 const Table = squeal_table.Table;
-const NodeLeaf = squeal_pager.NodeLeaf(Row, PAGE_SIZE);
-const Pager = squeal_pager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
-
-const PAGE_SIZE = 4096;
-const PAGE_COUNT = 128;
+const NodeLeaf = squeal_pager.NodeLeaf(Row, squeal_table.PAGE_SIZE);
+const Pager = squeal_pager.Pager(Row, squeal_table.PAGE_SIZE, squeal_table.PAGE_COUNT);
 
 test "creating new row fails when key is too long" {
     const key: [Row.MAX_KEY_LEN + 1]u8 = undefined;
@@ -31,7 +28,7 @@ test "table insert should update rows count" {
     var pager = try Pager.init(testing.allocator, filepath);
     defer pager.deinit();
     var table = try Table.init(&pager);
-    defer table.deinit();
+    defer table.deinit() catch unreachable;
 
     const rows = [_]Row{
         try Row.new(0, "hello_0", "world_0"),
@@ -61,7 +58,7 @@ test "table select should should returns all available rows" {
     var pager = try Pager.init(testing.allocator, filepath);
     defer pager.deinit();
     var table = try Table.init(&pager);
-    defer table.deinit();
+    defer table.deinit() catch unreachable;
 
     var i: u32 = 0;
     while (i < NodeLeaf.MAX_CELLS) : (i += 1) {
@@ -82,18 +79,15 @@ test "table select should should returns all available rows" {
 test "table persists between different runs" {
     const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
-
     var expected: [NodeLeaf.MAX_CELLS]Row = undefined;
     for (&expected, 0..) |*row, row_num| {
         row.* = try Row.new(@intCast(row_num), "hello", "world");
     }
-
     {
         var pager = try Pager.init(testing.allocator, filepath);
         defer pager.deinit();
         var table = try Table.init(&pager);
-        defer table.deinit();
-
+        defer table.deinit() catch unreachable;
         for (&expected) |*row| {
             try table.insert(row);
         }
@@ -102,11 +96,9 @@ test "table persists between different runs" {
         var pager = try Pager.init(testing.allocator, filepath);
         defer pager.deinit();
         var table = try Table.init(&pager);
-        defer table.deinit();
-
+        defer table.deinit() catch unreachable;
         const rows = try table.select(testing.allocator);
         defer testing.allocator.free(rows);
-
         try testing.expectEqualSlices(Row, &expected, rows);
     }
 }
