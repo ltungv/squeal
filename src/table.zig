@@ -322,10 +322,15 @@ pub const Table = struct {
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
         const cell = lnode.body.internal.find(key);
         splitInsert(u32, &lnode.body.internal.cells, &rnode.body.internal.cells, NodeInternal.L_SPLIT_KEYS, cell, key, page);
-        // We move the max key of the left child up to the parent. As a result,
-        // the left child contains InternalNode.L_SPLIT_KEYS - 1 keys
         lnode.body.internal.num_keys = NodeInternal.L_SPLIT_KEYS - 1;
         rnode.body.internal.num_keys = NodeInternal.R_SPLIT_KEYS;
+        // Update the left internal node's right child pointer be the child of
+        // its last cell. At this point, the right child of the left node has
+        // been moved to the right node. Therefore, we need to assign a new
+        // right child for it. Later, the max key of the left node will be
+        // added to the upper levels. As a result, the left child only contains
+        // InternalNode.L_SPLIT_KEYS - 1 keys.
+        lnode.body.internal.right_child = lnode.body.internal.cells[NodeInternal.L_SPLIT_KEYS - 1].val;
         if (key > lnode_max_key_old) {
             // The new key is larger the max key of the left node before the
             // split. Thus, the inserted page becomes the right child of the
@@ -341,12 +346,6 @@ pub const Table = struct {
             // child of the left node before the split.
             rnode.body.internal.right_child = lnode.body.internal.right_child;
         }
-        // Update the left internal node's right child pointer be the child of
-        // its last cell. At this point, the right child of the left node has
-        // been moved to the right node. Therefore, we need to assign a new
-        // right child for it. Later, the max key of the left node will be
-        // added to the upper levels.
-        lnode.body.internal.right_child = lnode.body.internal.cells[NodeInternal.L_SPLIT_KEYS - 1].val;
         // Update the parent pointers of the children of the right internal
         // node. At this point, all the children are pointing to the left node.
         for (rnode.body.internal.cells[0..rnode.body.internal.num_keys]) |index| {
