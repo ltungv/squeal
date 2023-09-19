@@ -40,7 +40,7 @@ test "table insert should update rows count" {
     for (rows) |row| {
         try table.insert(row);
     }
-    var num_rows: u32 = 0;
+    var num_rows: u64 = 0;
     for (table.pager.page_cache[0..table.pager.page_count]) |nullable_page| {
         if (nullable_page) |page| {
             if (page.header.type == .Leaf) {
@@ -60,7 +60,7 @@ test "table select should should returns all available rows" {
     var table = try Table.init(&pager);
     defer table.deinit() catch unreachable;
 
-    var i: u32 = 0;
+    var i: u64 = 0;
     while (i < NodeLeaf.MAX_CELLS) : (i += 1) {
         const row = try Row.new(i, "hello", "world");
         try table.insert(row);
@@ -70,7 +70,7 @@ test "table select should should returns all available rows" {
     defer testing.allocator.free(rows);
 
     for (rows, 0..) |row, row_num| {
-        try testing.expectEqual(@as(u32, @intCast(row_num)), row.id);
+        try testing.expectEqual(@as(u64, @intCast(row_num)), row.id);
         try testing.expectEqualStrings("hello", row.key_buf[0..row.key_len]);
         try testing.expectEqualStrings("world", row.val_buf[0..row.val_len]);
     }

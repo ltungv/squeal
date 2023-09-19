@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const squeal_pager = @import("pager.zig");
 
-const TestPager = squeal_pager.Pager(u32, 4096, 64);
+const TestPager = squeal_pager.Pager(u64, 4096, 64);
 
 test "node size check" {
     try testing.expect(@sizeOf(squeal_pager.Node(u8, 4096)) <= 4096);
@@ -45,5 +45,5 @@ test "page flush persist page" {
     defer pager.deinit();
 
     var node = try pager.get(0);
-    try testing.expectEqual(@as(u32, @intCast(420)), node.header.parent);
+    try testing.expectEqual(@as(u64, @intCast(420)), node.header.parent);
 }

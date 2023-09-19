@@ -2,8 +2,6 @@ const std = @import("std");
 const squeal_parse = @import("parse.zig");
 const squeal_table = @import("table.zig");
 
-pub const MAX_LINE_BUFFER_SIZE = 1024;
-
 // The virtual machine that executes SQL statements.
 pub const Vm = struct {
     allocator: std.mem.Allocator,
@@ -32,7 +30,7 @@ pub const Vm = struct {
         while (!finished) {
             try this.stream.print("db > ");
 
-            var line_buf: [MAX_LINE_BUFFER_SIZE]u8 = undefined;
+            var line_buf: [squeal_table.PAGE_SIZE]u8 = undefined;
             const line = this.stream.readln(&line_buf) catch |err| {
                 try this.stream.eprint(err);
                 continue;
@@ -92,14 +90,14 @@ pub const Vm = struct {
         }
     }
 
-    fn printTree(this: *@This(), page_num: u32, indentation: usize) Error!void {
+    fn printTree(this: *@This(), page_num: u64, indentation: usize) Error!void {
         const page = try this.table.pager.get(page_num);
         switch (page.header.type) {
             .Leaf => {
                 const leaf = &page.body.leaf;
                 try this.printIndentation(indentation);
                 try this.stream.printf("- leaf (size {d})\n", .{leaf.num_cells});
-                var cell_num: u32 = 0;
+                var cell_num: u64 = 0;
                 while (cell_num < leaf.num_cells) : (cell_num += 1) {
                     try this.printIndentation(indentation + 1);
                     try this.stream.printf("  - {d}\n", .{leaf.cells[cell_num].key});
@@ -109,7 +107,7 @@ pub const Vm = struct {
                 const internal = &page.body.internal;
                 try this.printIndentation(indentation);
                 try this.stream.printf("- internal (size {d})\n", .{internal.num_keys});
-                var cell_num: u32 = 0;
+                var cell_num: u64 = 0;
                 while (cell_num < internal.num_keys) : (cell_num += 1) {
                     const cell = internal.cells[cell_num];
                     try this.printTree(cell.val, indentation + 1);

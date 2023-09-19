@@ -74,11 +74,11 @@ pub const Parser = struct {
         return s[1 .. s.len - 1];
     }
 
-    fn integer(this: *@This()) Error!u32 {
+    fn integer(this: *@This()) Error!u64 {
         if (!try this.match(.Integer)) {
             return Error.UnexpectedToken;
         }
-        return try std.fmt.parseInt(u32, this.token_prev.?.lex, 10);
+        return try std.fmt.parseInt(u64, this.token_prev.?.lex, 10);
     }
 
     // Go forward one token.

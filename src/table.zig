@@ -14,7 +14,7 @@ pub const Pager = squeal_pager.Pager(Row, PAGE_SIZE, PAGE_COUNT);
 
 /// A row in the data table.
 pub const Row = extern struct {
-    id: u32,
+    id: u64,
     key_len: u8,
     val_len: u8,
     key_buf: [MAX_KEY_LEN]u8,
@@ -29,7 +29,7 @@ pub const Row = extern struct {
     pub const Error = error{ KeyTooLong, ValueTooLong };
 
     /// Create a new row.
-    pub fn new(id: u32, key: []const u8, val: []const u8) Error!@This() {
+    pub fn new(id: u64, key: []const u8, val: []const u8) Error!@This() {
         if (key.len > MAX_KEY_LEN) return Error.KeyTooLong;
         if (val.len > MAX_VAL_LEN) return Error.ValueTooLong;
         var key_buf: [MAX_KEY_LEN]u8 = undefined;
@@ -51,7 +51,7 @@ pub const Row = extern struct {
 /// that caches pages and flushes them to disk when needed.
 pub const Table = struct {
     pager: *Pager,
-    root_page: u32,
+    root_page: u64,
 
     /// Error that occurs when working with a table.
     pub const Error = error{
@@ -77,7 +77,7 @@ pub const Table = struct {
 
     /// Deinitialize the table by flushing all pages into disk.
     pub fn deinit(this: *@This()) Error!void {
-        var page_num: u32 = 0;
+        var page_num: u64 = 0;
         while (page_num < this.pager.page_count) : (page_num += 1) {
             const page = this.pager.page_cache[page_num] orelse continue;
             try this.pager.flush(page_num);
@@ -122,7 +122,7 @@ pub const Table = struct {
     }
 
     /// Get a cursor to a row in the table.
-    fn find(this: *@This(), page_num: u32, key: u32) Error!Cursor {
+    fn find(this: *@This(), page_num: u64, key: u64) Error!Cursor {
         const page = try this.pager.get(page_num);
         switch (page.header.type) {
             .Leaf => {
@@ -151,7 +151,7 @@ pub const Table = struct {
     /// - `key`: The key to be inserted into the new root.
     /// - `rnode`: The right child node of the new root.
     /// - `rnode_page`: The page number of the right child node.
-    fn createNewRoot(this: *@This(), root: *Node, key: u32, rnode: *Node, rnode_page: u32) Error!void {
+    fn createNewRoot(this: *@This(), root: *Node, key: u64, rnode: *Node, rnode_page: u64) Error!void {
         // Allocate a new page for the left node of the new root, then copy the
         // current root into the left node. The current root page contains the
         // left node resulted from a previous split.
@@ -193,7 +193,7 @@ pub const Table = struct {
     /// - `cell`: The cell insert position.
     /// - `key`: The key of the new cell.
     /// - `val`: The value of the new cell.
-    fn leafInsert(this: *@This(), node: *Node, cell: u32, key: u32, val: Row) Error!void {
+    fn leafInsert(this: *@This(), node: *Node, cell: u64, key: u64, val: Row) Error!void {
         if (node.body.leaf.num_cells >= NodeLeaf.MAX_CELLS) {
             // Leaf is full so we split.
             return this.leafSplitInsert(node, cell, key, val);
@@ -222,7 +222,7 @@ pub const Table = struct {
     /// - `cell`: The cell id to insert the new cell.
     /// - `key`: The key of the new cell.
     /// - `val`: The value of the new cell.
-    fn leafSplitInsert(this: *@This(), lnode: *Node, cell: u32, key: u32, val: Row) Error!void {
+    fn leafSplitInsert(this: *@This(), lnode: *Node, cell: u64, key: u64, val: Row) Error!void {
         // Allocate a new leaf node for the right child.
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
@@ -263,7 +263,7 @@ pub const Table = struct {
     /// - `new_node_page`: The child of the new cell.
     /// - `lnode_max_key_old`: The old key value of the cell
     /// - `lnode_max_key_new`: The new key value of the cell
-    fn internalInsert(this: *@This(), node: *Node, new_node_key: u32, new_node_page: u32, lnode_max_key_old: u32, lnode_max_key_new: u32) Error!void {
+    fn internalInsert(this: *@This(), node: *Node, new_node_key: u64, new_node_page: u64, lnode_max_key_old: u64, lnode_max_key_new: u64) Error!void {
         // Because we just performed a split at 1 tree level bellow, the max
         // key of node might have change so we update it here.
         node.body.internal.updateKey(lnode_max_key_old, lnode_max_key_new);
@@ -304,7 +304,7 @@ pub const Table = struct {
     /// - `page_node`: The internal node.
     /// - `new_node_key`: The key of the new cell
     /// - `new_node_page`: The child of the new cell.
-    fn internalSplitInsert(this: *@This(), lnode: *Node, key: u32, page: u32) Error!void {
+    fn internalSplitInsert(this: *@This(), lnode: *Node, key: u64, page: u64) Error!void {
         // Allocate the new right child.
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
@@ -321,7 +321,7 @@ pub const Table = struct {
         // key in case it changes due to the split.
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
         const cell = lnode.body.internal.find(key);
-        splitInsert(u32, &lnode.body.internal.cells, &rnode.body.internal.cells, NodeInternal.L_SPLIT_KEYS, cell, key, page);
+        splitInsert(u64, &lnode.body.internal.cells, &rnode.body.internal.cells, NodeInternal.L_SPLIT_KEYS, cell, key, page);
         lnode.body.internal.num_keys = NodeInternal.L_SPLIT_KEYS - 1;
         rnode.body.internal.num_keys = NodeInternal.R_SPLIT_KEYS;
         // Update the left internal node's right child pointer be the child of
@@ -367,7 +367,7 @@ pub const Table = struct {
     }
 
     /// Get the max key value of the tree rooted at the given page.
-    fn getTreeMaxKey(this: *@This(), page: *Node) Error!u32 {
+    fn getTreeMaxKey(this: *@This(), page: *Node) Error!u64 {
         if (page.header.type == .Leaf) {
             // Max key of a leaf node is the key of its last cell.
             return page.body.leaf.cells[page.body.leaf.num_cells - 1].key;
@@ -383,8 +383,8 @@ pub const Table = struct {
 /// a leaf node.
 pub const Cursor = struct {
     table: *Table,
-    page: u32,
-    cell: u32,
+    page: u64,
+    cell: u64,
     end: bool,
 
     pub const Error = Table.Error;
@@ -418,7 +418,7 @@ pub const Cursor = struct {
     }
 
     /// Insert a row into the leaf node.
-    pub fn insert(this: *@This(), key: u32, val: Row) Error!void {
+    pub fn insert(this: *@This(), key: u64, val: Row) Error!void {
         var page = try this.table.pager.get(this.page);
         try this.table.leafInsert(page, this.cell, key, val);
     }
@@ -440,8 +440,8 @@ pub const Cursor = struct {
 /// - `cell`: The index of the cell to insert in the original list.
 /// - `key`: The key of the cell to insert.
 /// - `value`: The value of the cell to insert.
-fn splitInsert(comptime T: type, lcells: []NodeCell(T), rcells: []NodeCell(T), split_at: u32, cell: u32, key: u32, value: T) void {
-    var idx: u32 = @as(u32, @intCast(lcells.len)) + 1;
+fn splitInsert(comptime T: type, lcells: []NodeCell(T), rcells: []NodeCell(T), split_at: u64, cell: u64, key: u64, value: T) void {
+    var idx = lcells.len + 1;
     while (idx > 0) : (idx -= 1) {
         var cells: []NodeCell(T) = undefined;
         const old_cell = idx - 1;
