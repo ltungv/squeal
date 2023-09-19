@@ -88,7 +88,7 @@ pub const Table = struct {
 
     /// Insert a new row into the table. Changes are not persisted until the
     /// page is flushed.
-    pub fn insert(this: *@This(), row: *const Row) Error!void {
+    pub fn insert(this: *@This(), row: Row) Error!void {
         var cursor = try this.find(this.root_page, row.id);
         const page = try this.pager.get(cursor.page);
         if (cursor.cell < page.body.leaf.num_cells and
@@ -193,7 +193,7 @@ pub const Table = struct {
     /// - `cell`: The cell insert position.
     /// - `key`: The key of the new cell.
     /// - `val`: The value of the new cell.
-    fn leafInsert(this: *@This(), node: *Node, cell: u32, key: u32, val: *const Row) Error!void {
+    fn leafInsert(this: *@This(), node: *Node, cell: u32, key: u32, val: Row) Error!void {
         if (node.body.leaf.num_cells >= NodeLeaf.MAX_CELLS) {
             // Leaf is full so we split.
             return this.leafSplitInsert(node, cell, key, val);
@@ -207,7 +207,7 @@ pub const Table = struct {
             }
         }
         node.body.leaf.num_cells += 1;
-        node.body.leaf.cells[cell] = .{ .key = key, .val = val.* };
+        node.body.leaf.cells[cell] = .{ .key = key, .val = val };
     }
 
     /// This function is called to insert a new cell into the given full leaf
@@ -222,7 +222,7 @@ pub const Table = struct {
     /// - `cell`: The cell id to insert the new cell.
     /// - `key`: The key of the new cell.
     /// - `val`: The value of the new cell.
-    fn leafSplitInsert(this: *@This(), lnode: *Node, cell: u32, key: u32, val: *const Row) Error!void {
+    fn leafSplitInsert(this: *@This(), lnode: *Node, cell: u32, key: u32, val: Row) Error!void {
         // Allocate a new leaf node for the right child.
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
@@ -234,7 +234,7 @@ pub const Table = struct {
         // max key of the left node before and after the split to update the
         // key in case it changes due to the split.
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
-        splitInsert(Row, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
+        splitInsert(Row, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val);
         rnode.body.leaf.num_cells = NodeLeaf.R_SPLIT_CELLS;
         rnode.body.leaf.next_leaf = lnode.body.leaf.next_leaf;
         lnode.body.leaf.num_cells = NodeLeaf.L_SPLIT_CELLS;
@@ -418,7 +418,7 @@ pub const Cursor = struct {
     }
 
     /// Insert a row into the leaf node.
-    pub fn insert(this: *@This(), key: u32, val: *const Row) Error!void {
+    pub fn insert(this: *@This(), key: u32, val: Row) Error!void {
         var page = try this.table.pager.get(this.page);
         try this.table.leafInsert(page, this.cell, key, val);
     }

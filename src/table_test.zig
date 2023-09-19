@@ -37,7 +37,7 @@ test "table insert should update rows count" {
         try Row.new(3, "hello_3", "world_3"),
         try Row.new(4, "hello_4", "world_4"),
     };
-    for (&rows) |*row| {
+    for (rows) |row| {
         try table.insert(row);
     }
     var num_rows: u32 = 0;
@@ -63,7 +63,7 @@ test "table select should should returns all available rows" {
     var i: u32 = 0;
     while (i < NodeLeaf.MAX_CELLS) : (i += 1) {
         const row = try Row.new(i, "hello", "world");
-        try table.insert(&row);
+        try table.insert(row);
     }
 
     const rows = try table.select(testing.allocator);
@@ -88,7 +88,7 @@ test "table persists between different runs" {
         defer pager.deinit();
         var table = try Table.init(&pager);
         defer table.deinit() catch unreachable;
-        for (&expected) |*row| {
+        for (expected) |row| {
             try table.insert(row);
         }
     }

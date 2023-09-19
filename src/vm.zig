@@ -76,7 +76,7 @@ pub const Vm = struct {
                         }
                     },
                     .Insert => |q| {
-                        try this.table.insert(&q.row);
+                        try this.table.insert(q.row);
                     },
                 }
                 try this.stream.print("Executed.\n");
