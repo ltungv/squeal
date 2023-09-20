@@ -54,13 +54,14 @@ pub fn AutoLruCache(comptime K: type, comptime V: type, comptime SIZE: usize) ty
             var node_map_entry = try this.order_node_map.getOrPut(this.allocator, key);
             if (node_map_entry.found_existing) {
                 invalidated = node_map_entry.value_ptr.*.data;
+                node_map_entry.value_ptr.*.data.value = value;
                 this.entries_order.remove(node_map_entry.value_ptr.*);
             } else {
                 node_map_entry.value_ptr.* = try this.allocator.create(Dequeue.Node);
                 node_map_entry.value_ptr.*.prev = null;
                 node_map_entry.value_ptr.*.next = null;
+                node_map_entry.value_ptr.*.data = .{ .key = key, .value = value };
             }
-            node_map_entry.value_ptr.*.data = .{ .key = key, .value = value };
             this.entries_order.prepend(node_map_entry.value_ptr.*);
             if (this.order_node_map.size > SIZE) {
                 const node_lru = this.entries_order.pop().?;
