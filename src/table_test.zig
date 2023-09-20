@@ -41,12 +41,10 @@ test "table insert should update rows count" {
         try table.insert(row);
     }
     var num_rows: u64 = 0;
-    for (table.pager.page_cache[0..table.pager.page_count]) |nullable_page| {
-        if (nullable_page) |page| {
-            if (page.header.type == .Leaf) {
-                num_rows += page.body.leaf.num_cells;
-            }
-        }
+    var cursor = try table.head();
+    while (!cursor.end) {
+        num_rows += 1;
+        try cursor.advance();
     }
     try testing.expectEqual(rows.len, num_rows);
 }

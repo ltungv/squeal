@@ -1,5 +1,5 @@
 const std = @import("std");
-const assert = std.debug.assert;
+const debug = std.debug;
 
 /// A LRU cache with fixed size that uses the predefined hash and eql functions
 /// for the key type.
@@ -68,7 +68,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type, comptime SIZE: usize) ty
             if (this.items.size > SIZE) {
                 const lru_node = this.order.pop().?;
                 invalidated_entry = lru_node.data;
-                assert(this.items.remove(lru_node.data.key));
+                debug.assert(this.items.remove(lru_node.data.key));
             }
             return invalidated_entry;
         }
