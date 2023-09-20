@@ -77,13 +77,7 @@ pub const Table = struct {
 
     /// Deinitialize the table by flushing all pages into disk.
     pub fn deinit(this: *@This()) Error!void {
-        var page_num: u64 = 0;
-        while (page_num < this.pager.page_count) : (page_num += 1) {
-            const page = this.pager.page_cache[page_num] orelse continue;
-            try this.pager.flush(page_num);
-            this.pager.page_cache[page_num] = null;
-            this.pager.allocator.destroy(page);
-        }
+        try this.pager.flushAll();
     }
 
     /// Insert a new row into the table. Changes are not persisted until the
