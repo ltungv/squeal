@@ -1,18 +1,22 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 /// A LRU cache with fixed size that uses the predefined hash and eql functions
 /// for the key type.
 pub fn AutoLruCache(comptime K: type, comptime V: type, comptime SIZE: usize) type {
     if (SIZE == 0) @compileError("cache size must be greater than 0");
 
-    const Entry = struct { key: K, value: V };
-    const Dequeue = std.TailQueue(Entry);
-    const HashMap = std.AutoHashMapUnmanaged(K, Dequeue.Node);
-
     return struct {
         allocator: std.mem.Allocator,
         order: Dequeue,
         items: HashMap,
+
+        const Dequeue = std.TailQueue(Entry);
+        const HashMap = std.AutoHashMapUnmanaged(K, Dequeue.Node);
+
+        pub const Error = std.mem.Allocator.Error;
+
+        pub const Entry = struct { key: K, value: V };
 
         /// Initialize the cache with the given allocator.
         pub fn init(allocator: std.mem.Allocator) @This() {
@@ -48,24 +52,25 @@ pub fn AutoLruCache(comptime K: type, comptime V: type, comptime SIZE: usize) ty
         /// There are 2 scenarios where a value is removed:
         /// 1. The key already exists and the value is overwritten.
         /// 2. The cache is full and the least recently used value is removed.
-        pub fn set(this: *@This(), key: K, value: V) !?V {
-            var removed_value: ?V = null;
+        pub fn set(this: *@This(), key: K, value: V) Error!?Entry {
+            var invalidated_entry: ?Entry = null;
             var entry = try this.items.getOrPut(this.allocator, key);
+            // If we overwrite an existing value, we need to unlink it from the
+            // queue so we can later move it to the front.
             if (entry.found_existing) {
-                // We always move the newly added node to the front of the queue,
-                // so we need to unlink the node when overwriting its value.
+                invalidated_entry = entry.value_ptr.data;
                 this.order.remove(entry.value_ptr);
-                removed_value = entry.value_ptr.data.value;
             }
+            // Assign data and move entry to the front of the queue.
             entry.value_ptr.data = .{ .key = key, .value = value };
             this.order.prepend(entry.value_ptr);
-            // Handle on cache full.
+            // Cache invalidation when full.
             if (this.items.size > SIZE) {
                 const lru_node = this.order.pop().?;
-                removed_value = lru_node.data.value;
-                std.debug.assert(this.items.remove(lru_node.data.key));
+                invalidated_entry = lru_node.data;
+                assert(this.items.remove(lru_node.data.key));
             }
-            return removed_value;
+            return invalidated_entry;
         }
     };
 }

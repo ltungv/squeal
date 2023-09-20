@@ -4,6 +4,7 @@ const squeal_table = @import("table.zig");
 const squeal_vm = @import("vm.zig");
 
 comptime {
+    _ = @import("lru_test.zig");
     _ = @import("pager_test.zig");
     _ = @import("table_test.zig");
     _ = @import("vm_test.zig");
