@@ -58,24 +58,24 @@ pub const Vm = struct {
                     try this.stream.print("Tree:\n");
                     try this.printTree(this.table.root_page, 0);
                 },
-                .Constants => {},
                 .Exit => return true,
             },
             .Query => |query| {
                 switch (query) {
+                    .Count => {
+                        const count = try this.table.count();
+                        try this.stream.printf("{}\n", .{count});
+                    },
                     .Select => {
                         const rows = try this.table.select(this.allocator);
                         defer this.allocator.free(rows);
-
                         for (rows) |row| {
                             const key = row.key_buf[0..row.key_len];
                             const val = row.val_buf[0..row.val_len];
                             try this.stream.printf("({d}, {s}, {s})\n", .{ row.id, key, val });
                         }
                     },
-                    .Insert => |q| {
-                        try this.table.insert(q.row);
-                    },
+                    .Insert => |q| try this.table.insert(&q.row),
                 }
                 try this.stream.print("Executed.\n");
             },

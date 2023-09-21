@@ -41,7 +41,7 @@ pub const Tokenizer = struct {
     }
 
     fn string(this: *@This()) Error!Token {
-        while (!this.peekCheck(@This().isSingleQuote)) {
+        while (!this.peekCheck(isSingleQuote)) {
             _ = this.advance();
         }
         try this.consume('\'');
@@ -54,6 +54,9 @@ pub const Tokenizer = struct {
         }
         var typ = TokenType.Ident;
         const lex = this.src[this.lexeme_head..this.lexeme_tail];
+        if (std.mem.eql(u8, lex, "count")) {
+            typ = .Count;
+        }
         if (std.mem.eql(u8, lex, "select")) {
             typ = .Select;
         }
@@ -131,6 +134,7 @@ pub const Token = struct {
 /// All types of tokens in our Squeal.
 pub const TokenType = enum {
     Dot,
+    Count,
     Select,
     Insert,
     Ident,

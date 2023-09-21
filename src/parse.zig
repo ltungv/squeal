@@ -43,9 +43,6 @@ pub const Parser = struct {
         if (std.mem.eql(u8, command_name.lex, "btree")) {
             return Statement{ .Command = CommandStatement.BTree };
         }
-        if (std.mem.eql(u8, command_name.lex, "constants")) {
-            return Statement{ .Command = CommandStatement.Constants };
-        }
         if (std.mem.eql(u8, command_name.lex, "exit")) {
             return Statement{ .Command = CommandStatement.Exit };
         }
@@ -53,6 +50,9 @@ pub const Parser = struct {
     }
 
     fn statement(this: *@This()) Error!Statement {
+        if (try this.match(.Count)) {
+            return Statement{ .Query = .{ .Count = {} } };
+        }
         if (try this.match(.Select)) {
             return Statement{ .Query = .{ .Select = {} } };
         }
@@ -118,20 +118,21 @@ pub const Statement = union(StatementType) {
 /// A command statement.
 pub const CommandStatement = enum {
     BTree,
-    Constants,
     Exit,
 };
 
 /// All types of query statements.
 pub const QueryStatementType = enum {
-    Insert,
+    Count,
     Select,
+    Insert,
 };
 
 /// A query statement.
 pub const QueryStatement = union(QueryStatementType) {
-    Insert: InsertQuery,
+    Count: void,
     Select: void,
+    Insert: InsertQuery,
 };
 
 /// An insert query.
