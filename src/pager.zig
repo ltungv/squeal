@@ -1,5 +1,6 @@
 const std = @import("std");
 const debug = std.debug;
+const squeal_lru = @import("lru.zig");
 
 /// A node within a B+ tree, which can be one of two types:
 /// + Leaf node containing data entries and their keys.
@@ -36,7 +37,7 @@ pub fn NodeBody(comptime T: type, comptime S: usize) type {
 
 /// Content of a leaf node in a B+ tree.
 pub fn NodeLeaf(comptime T: type, comptime S: usize) type {
-        return extern struct {
+    return extern struct {
         next_leaf: u64,
         num_cells: u64,
         cells: [MAX_CELLS]NodeCell(T),
@@ -59,7 +60,7 @@ pub fn NodeLeaf(comptime T: type, comptime S: usize) type {
 
 /// Content of an internal node in a B+ tree.
 pub fn NodeInternal(comptime S: usize) type {
-        return extern struct {
+    return extern struct {
         right_child: u64,
         num_keys: u64,
         cells: [MAX_KEYS]NodeCell(u64),
@@ -87,9 +88,7 @@ pub fn NodeInternal(comptime S: usize) type {
         /// Find the index at old_key and update its value to new_key.
         pub fn updateKey(this: *@This(), old_key: u64, new_key: u64) void {
             const index = this.find(old_key);
-            if (index < this.num_keys) {
-                this.cells[index].key = new_key;
-            }
+            if (index < this.num_keys) this.cells[index].key = new_key;
         }
     };
 }
@@ -108,12 +107,14 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
     if (PAGE_SIZE == 0) @compileError("page size must be greater than 0");
     if (PAGE_COUNT == 0) @compileError("page count must be greater than 0");
 
+    const Cache = squeal_lru.AutoLruCache(u64, *Node(T, PAGE_SIZE), 128);
+
     return struct {
         allocator: std.mem.Allocator,
         len: u64,
         file: std.fs.File,
         page_count: u64,
-        page_cache: [PAGE_COUNT]?*Node(T, PAGE_SIZE),
+        page_cache: Cache,
 
         /// Error that occurs when using a pager.
         pub const Error = error{
@@ -140,33 +141,27 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             // File must contain whole page(s).
             const file_stat = try file.stat();
             if (file_stat.size % PAGE_SIZE != 0) return Error.Corrupted;
-            // Initialize all cached pages to null.
-            var page_cache: [PAGE_COUNT]?*Node(T, PAGE_SIZE) = undefined;
-            @memset(&page_cache, null);
             return .{
                 .allocator = allocator,
                 .len = file_stat.size,
                 .file = file,
                 .page_count = file_stat.size / PAGE_SIZE,
-                .page_cache = page_cache,
+                .page_cache = Cache.init(allocator),
             };
         }
 
         /// Deinitialize the pager.
         pub fn deinit(this: *@This()) void {
-            for (&this.page_cache) |*page| {
-                if (page.*) |the_page| {
-                    this.allocator.destroy(the_page);
-                    page.* = null;
-                }
-            }
+            var node_it = this.page_cache.order_node_map.valueIterator();
+            while (node_it.next()) |node| this.allocator.destroy(node.*.data.value);
+            this.page_cache.deinit();
             this.file.close();
         }
 
         /// Flush a page to disk.
         pub fn flush(this: *@This(), page_num: u64) Error!void {
-            const page = this.page_cache[page_num] orelse return Error.NullPage;
-            try this.writePage(page_num, page.*);
+            const page = this.page_cache.get(page_num) orelse return Error.NullPage;
+            try this.writePage(page_num, page);
         }
 
         /// Flush all known pages to disk.
@@ -180,11 +175,10 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         /// Get a pointer to a cached page. If the page is not in cache, it will be read from disk.
         pub fn get(this: *@This(), page_num: u64) Error!*Node(T, PAGE_SIZE) {
             if (page_num >= PAGE_COUNT) return Error.OutOfBound;
-            if (this.page_cache[page_num]) |node| return node;
+            if (this.page_cache.get(page_num)) |page| return page;
             // Cache miss.
             var page = try this.allocator.create(Node(T, PAGE_SIZE));
-            const pages_on_disk = this.len / PAGE_SIZE;
-            if (page_num < pages_on_disk) {
+            if (page_num < this.len / PAGE_SIZE) {
                 // Load page from disk if it exists.
                 var page_buf: [PAGE_SIZE]u8 = undefined;
                 const read_bytes = try this.file.preadAll(&page_buf, page_num * PAGE_SIZE);
@@ -195,7 +189,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
                 page.* = try reader.readStruct(Node(T, PAGE_SIZE));
             }
             // Cache page.
-            this.page_cache[page_num] = page;
+            try this.page_cache.set(page_num, page);
             // Update in memory page count to match the number of pages on disk.
             if (page_num >= this.page_count) this.page_count = page_num + 1;
             return page;
@@ -206,13 +200,23 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             return this.page_count;
         }
 
+        /// Clean up the pager by finding all cached pages that will be evicted
+        /// and flush them to disk.
+        pub fn clean(this: *@This()) Error!void {
+            while (try this.page_cache.invalidate()) |invalidated| {
+                try this.writePage(invalidated.key, invalidated.value);
+                this.allocator.destroy(invalidated.value);
+            }
+        }
+
         /// Write a whole page to disk at the correct offset based on the page number.
-        fn writePage(this: @This(), page_num: u64, page: Node(T, PAGE_SIZE)) Error!void {
+        fn writePage(this: *@This(), page_num: u64, page: *const Node(T, PAGE_SIZE)) Error!void {
             var buf: [PAGE_SIZE]u8 = undefined;
             var stream = std.io.fixedBufferStream(&buf);
             var writer = stream.writer();
-            try writer.writeStruct(page);
-            _ = try this.file.pwriteAll(&buf, page_num * PAGE_SIZE);
+            try writer.writeStruct(page.*);
+            try this.file.pwriteAll(&buf, page_num * PAGE_SIZE);
+            this.len = @max(this.len, page_num * PAGE_SIZE + PAGE_SIZE);
         }
     };
 }

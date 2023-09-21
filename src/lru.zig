@@ -45,30 +45,29 @@ pub fn AutoLruCache(comptime K: type, comptime V: type, comptime SIZE: usize) ty
             return null;
         }
 
-        /// Set the value at the given key returning any value that was removed.
-        /// There are 2 scenarios where a value is removed:
-        /// 1. The key already exists and the value is overwritten.
-        /// 2. The cache is full and the least recently used value is removed.
-        pub fn set(this: *@This(), key: K, value: V) Error!?Entry {
-            var invalidated: ?Entry = null;
+        /// Set the value at the given key and overwrite any value that is
+        /// currently associated with it.
+        pub fn set(this: *@This(), key: K, value: V) Error!void {
             var node_map_entry = try this.order_node_map.getOrPut(this.allocator, key);
             if (node_map_entry.found_existing) {
-                invalidated = node_map_entry.value_ptr.*.data;
-                node_map_entry.value_ptr.*.data.value = value;
                 this.entries_order.remove(node_map_entry.value_ptr.*);
             } else {
                 node_map_entry.value_ptr.* = try this.allocator.create(Dequeue.Node);
                 node_map_entry.value_ptr.*.prev = null;
                 node_map_entry.value_ptr.*.next = null;
-                node_map_entry.value_ptr.*.data = .{ .key = key, .value = value };
             }
+            node_map_entry.value_ptr.*.data = .{ .key = key, .value = value };
             this.entries_order.prepend(node_map_entry.value_ptr.*);
-            if (this.order_node_map.size > SIZE) {
-                const node_lru = this.entries_order.pop().?;
-                invalidated = node_lru.data;
-                debug.assert(this.order_node_map.remove(node_lru.data.key));
-                this.allocator.destroy(node_lru);
-            }
+        }
+
+        /// Removes the least-recently used entry from the cache and returns it.
+        /// If the cache is not over capacity, null is returned.
+        pub fn invalidate(this: *@This()) Error!?Entry {
+            if (this.order_node_map.size <= SIZE) return null;
+            var node = this.entries_order.pop().?;
+            const invalidated = node.data;
+            debug.assert(this.order_node_map.remove(node.data.key));
+            this.allocator.destroy(node);
             return invalidated;
         }
     };

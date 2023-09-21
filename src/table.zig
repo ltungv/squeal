@@ -2,7 +2,7 @@ const std = @import("std");
 const squeal_pager = @import("pager.zig");
 
 pub const PAGE_SIZE = 32 * 1024;
-pub const PAGE_COUNT = 1024;
+pub const PAGE_COUNT = 1024 * 1024;
 
 pub const Node = squeal_pager.Node(Row, PAGE_SIZE);
 pub const NodeType = squeal_pager.NodeType;
@@ -83,6 +83,7 @@ pub const Table = struct {
     /// Insert a new row into the table. Changes are not persisted until the
     /// page is flushed.
     pub fn insert(this: *@This(), row: Row) Error!void {
+        try this.pager.clean();
         var cursor = try this.find(this.root_page, row.id);
         const page = try this.pager.get(cursor.page);
         if (cursor.cell < page.body.leaf.num_cells and
@@ -96,6 +97,7 @@ pub const Table = struct {
     /// Find all rows from the table and return an owned slice containing
     /// their data.
     pub fn select(this: *@This(), allocator: std.mem.Allocator) Error![]Row {
+        try this.pager.clean();
         var rows = std.ArrayList(Row).init(allocator);
         var cursor = try this.head();
         while (!cursor.end) {
