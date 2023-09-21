@@ -236,7 +236,7 @@ pub const Table = struct {
         const rnode = try this.pager.get(rnode_page);
         rnode.* = .{
             .header = .{ .parent = lnode.header.parent, .is_root = false, .type = NodeType.Leaf },
-            .body = .{ .leaf = undefined },
+            .body = undefined,
         };
         // Insert the new cell while splitting the node evenly. We track the
         // max key of the left node before and after the split to update the
@@ -318,7 +318,7 @@ pub const Table = struct {
         const rnode = try this.pager.get(rnode_page);
         rnode.* = .{
             .header = .{ .parent = lnode.header.parent, .is_root = false, .type = NodeType.Internal },
-            .body = .{ .internal = undefined },
+            .body = undefined,
         };
         // Insert the new cell while splitting the node evenly. We track the
         // max key of the left node before and after the split to update the

@@ -107,7 +107,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
     if (PAGE_SIZE == 0) @compileError("page size must be greater than 0");
     if (PAGE_COUNT == 0) @compileError("page count must be greater than 0");
 
-    const Cache = squeal_lru.AutoLruCache(u64, *Node(T, PAGE_SIZE), 128);
+    const Cache = squeal_lru.AutoLruCache(u64, *Node(T, PAGE_SIZE));
 
     return struct {
         allocator: std.mem.Allocator,
@@ -125,6 +125,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             NullPage,
             OutOfBound,
         } ||
+            Cache.Error ||
             std.fs.File.OpenError ||
             std.mem.Allocator.Error ||
             std.os.GetCwdError ||
@@ -146,7 +147,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
                 .len = file_stat.size,
                 .file = file,
                 .page_count = file_stat.size / PAGE_SIZE,
-                .page_cache = Cache.init(allocator),
+                .page_cache = try Cache.init(allocator, 128),
             };
         }
 
@@ -168,7 +169,9 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         pub fn flushAll(this: *@This()) Error!void {
             var page_num: u64 = 0;
             while (page_num < this.page_count) : (page_num += 1) {
-                this.flush(page_num) catch |err| if (err != error.NullPage) return err;
+                this.flush(page_num) catch |err| {
+                    if (err != error.NullPage) return err;
+                };
             }
         }
 
@@ -190,7 +193,6 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             }
             // Cache page.
             try this.page_cache.set(page_num, page);
-            // Update in memory page count to match the number of pages on disk.
             if (page_num >= this.page_count) this.page_count = page_num + 1;
             return page;
         }

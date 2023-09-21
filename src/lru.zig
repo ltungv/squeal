@@ -1,28 +1,39 @@
 const std = @import("std");
 const debug = std.debug;
 
-/// A fixed size LRU cache that uses the predefined hash and eql functions for
-/// the key type.
-pub fn AutoLruCache(comptime K: type, comptime V: type, comptime SIZE: usize) type {
-    if (SIZE == 0) @compileError("cache size must be greater than 0");
+/// An LRU cache backed by a hashmap and a doubly-linked list. Two functions
+/// `hash` and `eql` are automatically generated for the key type so it can be
+/// used in the hash map. The cache only invalidate entries when asked to.
+pub fn AutoLruCache(comptime K: type, comptime V: type) type {
     return struct {
         allocator: std.mem.Allocator,
+        max_size: usize,
         entries_order: Dequeue,
         order_node_map: HashMap,
 
+        /// The type for the list of entries sorted from most recently used to
+        /// least recently used. The list node store the key in addition to the
+        /// value so that we can quickly remove the least recently used entry.
         const Dequeue = std.TailQueue(Entry);
+
+        /// This maps keys to references to nodes in our doubly-linked list. The
+        /// value is extracted by following the reference at get the data from
+        /// the list node. This is used so we can quickly move an recently
+        /// accessed entry to the front of the list.
         const HashMap = std.AutoHashMapUnmanaged(K, *Dequeue.Node);
 
-        /// A cache entry consisting of a key and a value.
+        /// A cache entry consists of a key and a value.
         pub const Entry = struct { key: K, value: V };
 
         /// Error that can occur when using the cache.
-        pub const Error = std.mem.Allocator.Error;
+        pub const Error = error{InvalidSize} || std.mem.Allocator.Error;
 
-        /// Initialize the cache.
-        pub fn init(allocator: std.mem.Allocator) @This() {
+        /// Initialize the cache with an allocator and its max size.
+        pub fn init(allocator: std.mem.Allocator, max_size: usize) Error!@This() {
+            if (max_size == 0) return error.InvalidSize;
             return .{
                 .allocator = allocator,
+                .max_size = max_size,
                 .entries_order = Dequeue{},
                 .order_node_map = HashMap{},
             };
@@ -63,7 +74,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type, comptime SIZE: usize) ty
         /// Removes the least-recently used entry from the cache and returns it.
         /// If the cache is not over capacity, null is returned.
         pub fn invalidate(this: *@This()) Error!?Entry {
-            if (this.order_node_map.size <= SIZE) return null;
+            if (this.order_node_map.size <= this.max_size) return null;
             var node = this.entries_order.pop().?;
             const invalidated = node.data;
             debug.assert(this.order_node_map.remove(node.data.key));
