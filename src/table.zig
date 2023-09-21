@@ -238,22 +238,18 @@ pub const Table = struct {
             .header = .{ .parent = lnode.header.parent, .is_root = false, .type = NodeType.Leaf },
             .body = undefined,
         };
-        // Insert the new cell while splitting the node evenly. We track the
-        // max key of the left node before and after the split to update the
-        // key in case it changes due to the split.
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
+        // Insert the new cell while splitting the node evenly.
         splitInsert(Row, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
         rnode.body.leaf.num_cells = NodeLeaf.R_SPLIT_CELLS;
         rnode.body.leaf.next_leaf = lnode.body.leaf.next_leaf;
         lnode.body.leaf.num_cells = NodeLeaf.L_SPLIT_CELLS;
         lnode.body.leaf.next_leaf = rnode_page;
-        // Propagate changes to upper levels.
+        // Create a new root using the max key of the left node.
         const lnode_max_key_new = try this.getTreeMaxKey(lnode);
-        if (lnode.header.is_root) {
-            // Create a new root using the max key of the left node.
-            return this.createNewRoot(lnode, lnode_max_key_new, rnode, rnode_page);
-        }
-        // Insert the max key of the right node into the parent node.
+        if (lnode.header.is_root) return this.createNewRoot(lnode, lnode_max_key_new, rnode, rnode_page);
+        // Insert the max key of the right node into the parent node. We pass
+        // the current and new max key of the left node, in case it was updated.
         const rnode_max_key = try this.getTreeMaxKey(rnode);
         const parent = try this.pager.get(lnode.header.parent);
         try this.internalInsert(parent, rnode_max_key, rnode_page, lnode_max_key_old, lnode_max_key_new);
@@ -271,7 +267,14 @@ pub const Table = struct {
     /// - `new_node_page`: The child of the new cell.
     /// - `lnode_max_key_old`: The old key value of the cell
     /// - `lnode_max_key_new`: The new key value of the cell
-    fn internalInsert(this: *@This(), node: *Node, new_node_key: u64, new_node_page: u64, lnode_max_key_old: u64, lnode_max_key_new: u64) Error!void {
+    fn internalInsert(
+        this: *@This(),
+        node: *Node,
+        new_node_key: u64,
+        new_node_page: u64,
+        lnode_max_key_old: u64,
+        lnode_max_key_new: u64,
+    ) Error!void {
         // Because we just performed a split at 1 tree level bellow, the max
         // key of node might have change so we update it here.
         node.body.internal.updateKey(lnode_max_key_old, lnode_max_key_new);
@@ -320,11 +323,9 @@ pub const Table = struct {
             .header = .{ .parent = lnode.header.parent, .is_root = false, .type = NodeType.Internal },
             .body = undefined,
         };
-        // Insert the new cell while splitting the node evenly. We track the
-        // max key of the left node before and after the split to update the
-        // key in case it changes due to the split.
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
         const cell = lnode.body.internal.find(key);
+        // Insert the new cell while splitting the node evenly
         splitInsert(u64, &lnode.body.internal.cells, &rnode.body.internal.cells, NodeInternal.L_SPLIT_KEYS, cell, key, page);
         lnode.body.internal.num_keys = NodeInternal.L_SPLIT_KEYS - 1;
         rnode.body.internal.num_keys = NodeInternal.R_SPLIT_KEYS;
@@ -358,13 +359,11 @@ pub const Table = struct {
             const rchild_child = try this.pager.get(index.val);
             rchild_child.header.parent = rnode_page;
         }
-        // Propagate changes to upper levels.
+        // Create a new root using the max key of the left node.
         const lnode_max_key_new = try this.getTreeMaxKey(lnode);
-        if (lnode.header.is_root) {
-            // Create a new root using the max key of the left node.
-            return this.createNewRoot(lnode, lnode_max_key_new, rnode, rnode_page);
-        }
-        // Insert the max key of the right node into the parent node.
+        if (lnode.header.is_root) return this.createNewRoot(lnode, lnode_max_key_new, rnode, rnode_page);
+        // Insert the max key of the right node into the parent node. We pass
+        // the current and new max key of the left node, in case it was updated.
         const rchild_tree_max_key = try this.getTreeMaxKey(rnode);
         const parent = try this.pager.get(lnode.header.parent);
         try this.internalInsert(parent, rchild_tree_max_key, rnode_page, lnode_max_key_old, lnode_max_key_new);
@@ -460,7 +459,15 @@ pub const Cursor = struct {
 /// - `cell`: The index of the cell to insert in the original list.
 /// - `key`: The key of the cell to insert.
 /// - `value`: The value of the cell to insert.
-fn splitInsert(comptime T: type, lcells: []NodeCell(T), rcells: []NodeCell(T), split_at: u64, cell: u64, key: u64, value: T) void {
+fn splitInsert(
+    comptime T: type,
+    lcells: []NodeCell(T),
+    rcells: []NodeCell(T),
+    split_at: u64,
+    cell: u64,
+    key: u64,
+    value: T,
+) void {
     var idx = lcells.len + 1;
     while (idx > 0) : (idx -= 1) {
         var cells: []NodeCell(T) = undefined;
