@@ -58,9 +58,11 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
 
         /// Set the value at the given key and overwrite any value that is
         /// currently associated with it.
-        pub fn set(this: *@This(), key: K, value: V) Error!void {
+        pub fn set(this: *@This(), key: K, value: V) Error!?V {
+            var replaced_value: ?V = null;
             var entry = try this.entries.getOrPut(this.allocator, key);
             if (entry.found_existing) {
+                replaced_value = entry.value_ptr.data;
                 this.keys_order.remove(entry.value_ptr.node);
             } else {
                 entry.value_ptr.node = try this.allocator.create(Dequeue.Node);
@@ -68,6 +70,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
             }
             entry.value_ptr.data = value;
             this.keys_order.prepend(entry.value_ptr.node);
+            return replaced_value;
         }
 
         /// Removes the least-recently used entry from the cache and returns it.

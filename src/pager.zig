@@ -216,7 +216,10 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
                 page.* = try reader.readStruct(Node(T, PAGE_SIZE));
             }
             // Cache page.
-            try this.page_cache.set(page_num, page);
+            if (try this.page_cache.set(page_num, page)) |replaced_page| {
+                try this.writePage(page_num, replaced_page);
+                this.allocator.destroy(replaced_page);
+            }
             if (page_num >= this.page_count) this.page_count = page_num + 1;
             return page;
         }
