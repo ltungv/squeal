@@ -54,10 +54,7 @@ pub const Table = struct {
     root_page: u64,
 
     /// Error that occurs when working with a table.
-    pub const Error = error{
-        TableFull,
-        DuplicateKey,
-    } || Pager.Error || Row.Error;
+    pub const Error = error{ TableFull, DuplicateKey } || Pager.Error || Row.Error;
 
     /// Initialize a new table backed by the given pager.
     pub fn init(pager: *Pager) Error!@This() {
@@ -92,7 +89,6 @@ pub const Table = struct {
         var rows = std.ArrayList(Row).init(allocator);
         var cursor = try this.head();
         while (!cursor.end) {
-            // Copy each row and put it in the ArrayList.
             const row_slot = try cursor.value_view();
             try rows.append(row_slot.*);
             try cursor.advance();
@@ -168,7 +164,6 @@ pub const Table = struct {
         root.body.internal = .{ .num_keys = 1, .right_child = @intCast(rnode_page), .cells = undefined };
         root.body.internal.cells[0].key = key;
         root.body.internal.cells[0].val = @intCast(lnode_page);
-        // The children of the right node should have been updated
         if (lnode.header.type == .Internal) try this.internalSetChildrenParent(lnode, lnode_page);
     }
 
@@ -214,7 +209,7 @@ pub const Table = struct {
         // Create a new root.
         const lnode_max_key_new = try this.getTreeMaxKey(lnode);
         if (lnode.header.is_root) return this.createNewRoot(lnode, lnode_max_key_new, rnode, rnode_page);
-        // Insert the max key of the right node into the parent node
+        // Insert the max key of the right node into the parent node.
         const rnode_max_key = try this.getTreeMaxKey(rnode);
         const parent = try this.pager.get(lnode.header.parent);
         try this.internalInsert(parent, rnode_max_key, rnode_page, lnode_max_key_old, lnode_max_key_new);
@@ -229,8 +224,8 @@ pub const Table = struct {
     /// - `node`: The internal node.
     /// - `key`: The key of the new cell
     /// - `page`: The child of the new cell.
-    /// - `lnode_max_key_old`: The old key value of the cell
-    /// - `lnode_max_key_new`: The new key value of the cell
+    /// - `lnode_max_key_old`: The old key value of the cell.
+    /// - `lnode_max_key_new`: The new key value of the cell.
     fn internalInsert(this: *@This(), node: *Node, key: u64, page: u64, lnode_max_key_old: u64, lnode_max_key_new: u64) Error!void {
         std.debug.assert(node.header.type == .Internal);
         // We just performed a split at 1 tree level bellow, so the max key

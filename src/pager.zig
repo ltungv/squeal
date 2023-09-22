@@ -135,17 +135,14 @@ pub fn NodeCell(comptime T: type) type {
 /// A pager is responsible for reading and writing pages (blocks of data) to a file.
 /// Changes made on a page are not persisted until the page is flushed.
 pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64) type {
-    if (PAGE_SIZE == 0) @compileError("page size must be greater than 0");
-    if (PAGE_COUNT == 0) @compileError("page count must be greater than 0");
-
-    const Cache = squeal_lru.AutoLruCache(u64, *Node(T, PAGE_SIZE));
-
     return struct {
         allocator: std.mem.Allocator,
         len: u64,
         file: std.fs.File,
         page_count: u64,
         page_cache: Cache,
+
+        const Cache = squeal_lru.AutoLruCache(u64, *Node(T, PAGE_SIZE));
 
         /// Error that occurs when using a pager.
         pub const Error = error{
@@ -156,7 +153,6 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             NullPage,
             OutOfBound,
         } ||
-            Cache.Error ||
             std.fs.File.OpenError ||
             std.mem.Allocator.Error ||
             std.os.GetCwdError ||
@@ -178,7 +174,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
                 .len = file_stat.size,
                 .file = file,
                 .page_count = file_stat.size / PAGE_SIZE,
-                .page_cache = try Cache.init(allocator, 128),
+                .page_cache = Cache.init(allocator, 128),
             };
         }
 
@@ -200,9 +196,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         pub fn flushAll(this: *@This()) Error!void {
             var page_num: u64 = 0;
             while (page_num < this.page_count) : (page_num += 1) {
-                this.flush(page_num) catch |err| {
-                    if (err != error.NullPage) return err;
-                };
+                this.flush(page_num) catch |err| if (err != error.NullPage) return err;
             }
         }
 
@@ -212,12 +206,11 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             if (this.page_cache.get(page_num)) |page| return page;
             // Cache miss.
             var page = try this.allocator.create(Node(T, PAGE_SIZE));
+            // Load page from disk if it exists.
             if (page_num < this.len / PAGE_SIZE) {
-                // Load page from disk if it exists.
                 var page_buf: [PAGE_SIZE]u8 = undefined;
                 const read_bytes = try this.file.preadAll(&page_buf, page_num * PAGE_SIZE);
                 debug.assert(read_bytes == PAGE_SIZE);
-                // Deserialize page into its in-memory representation.
                 var stream = std.io.fixedBufferStream(&page_buf);
                 var reader = stream.reader();
                 page.* = try reader.readStruct(Node(T, PAGE_SIZE));

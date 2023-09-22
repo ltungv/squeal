@@ -26,11 +26,10 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
         pub const Entry = struct { key: K, value: V };
 
         /// Error that can occur when using the cache.
-        pub const Error = error{InvalidSize} || std.mem.Allocator.Error;
+        pub const Error = std.mem.Allocator.Error;
 
         /// Initialize the cache with an allocator and its max size.
-        pub fn init(allocator: std.mem.Allocator, max_size: usize) Error!@This() {
-            if (max_size == 0) return error.InvalidSize;
+        pub fn init(allocator: std.mem.Allocator, max_size: usize) @This() {
             return .{
                 .allocator = allocator,
                 .max_size = max_size,

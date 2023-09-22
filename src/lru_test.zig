@@ -5,7 +5,7 @@ const squeal_lru = @import("lru.zig");
 const TestCache = squeal_lru.AutoLruCache(u64, u64);
 
 test "lru cache get and set" {
-    var cache = try TestCache.init(testing.allocator, 3);
+    var cache = TestCache.init(testing.allocator, 3);
     defer cache.deinit();
     // set new
     try cache.set(0, 69);
@@ -26,7 +26,7 @@ test "lru cache get and set" {
 }
 
 test "lru cache invalidation order" {
-    var cache = try TestCache.init(testing.allocator, 3);
+    var cache = TestCache.init(testing.allocator, 3);
     defer cache.deinit();
     // set new
     try cache.set(0, 69);
