@@ -77,9 +77,9 @@ test "table select should should returns all available rows" {
 test "table persists between different runs" {
     const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
-    var expected: [NodeLeaf.MAX_CELLS]Row = undefined;
+    var expected: [10_000]Row = undefined;
     for (&expected, 0..) |*row, row_num| {
-        row.* = try Row.new(@intCast(row_num), "hello", "world");
+        row.* = try Row.new(row_num, "hello", "world");
     }
     {
         var pager = try Pager.init(testing.allocator, filepath);
