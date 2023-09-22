@@ -145,14 +145,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         const Cache = squeal_lru.AutoLruCache(u64, *Node(T, PAGE_SIZE));
 
         /// Error that occurs when using a pager.
-        pub const Error = error{
-            Corrupted,
-            EndOfStream,
-            FileSystem,
-            NotSupported,
-            NullPage,
-            OutOfBound,
-        } ||
+        pub const Error = error{ Corrupted, EndOfStream, FileSystem, NotSupported, NullPage, OutOfBound } ||
             std.fs.File.OpenError ||
             std.mem.Allocator.Error ||
             std.os.GetCwdError ||

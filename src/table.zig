@@ -38,20 +38,20 @@ pub const Row = extern struct {
 /// A table is a collection of persistent rows stored in a B+ tree structure
 /// for fast lookups. Rows are stored in pages, which are managed by a pager
 /// that caches pages and flushes them to disk when needed.
-pub fn Table(comptime PZ: u64, comptime PN: u64) type {
+pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
     return struct {
         pager: *Pager,
         root_page: u64,
 
         const TTable = @This();
 
-        pub const Node = squeal_pager.Node(Row, PZ);
-        pub const NodeLeaf = squeal_pager.NodeLeaf(Row, PZ);
+        pub const Node = squeal_pager.Node(T, PZ);
+        pub const NodeLeaf = squeal_pager.NodeLeaf(T, PZ);
         pub const NodeInternal = squeal_pager.NodeInternal(PZ);
-        pub const Pager = squeal_pager.Pager(Row, PZ, PN);
+        pub const Pager = squeal_pager.Pager(T, PZ, PN);
 
         /// Error that occurs when working with a table.
-        pub const Error = error{ TableFull, DuplicateKey } || Pager.Error || Row.Error;
+        pub const Error = error{ TableFull, DuplicateKey } || Pager.Error;
 
         /// The cursor points to the location of a row within a leaf node.
         /// When creating a cursor, we must make sure that `page` points to
@@ -63,13 +63,13 @@ pub fn Table(comptime PZ: u64, comptime PN: u64) type {
             end: bool,
 
             /// Get a reference the row that the cursor is pointing to.
-            pub fn value(this: *const @This()) Error!*Row {
+            pub fn value(this: *const @This()) Error!*T {
                 const page = try this.table.pager.get(this.page);
                 return &page.body.leaf.cells[this.cell].val;
             }
 
             /// Get a const reference the row that the cursor is pointing to.
-            pub fn value_view(this: *const @This()) Error!*const Row {
+            pub fn value_view(this: *const @This()) Error!*const T {
                 return this.value();
             }
 
@@ -91,7 +91,7 @@ pub fn Table(comptime PZ: u64, comptime PN: u64) type {
             }
 
             /// Insert a row into the leaf node.
-            pub fn insert(this: *@This(), key: u64, val: *const Row) Error!void {
+            pub fn insert(this: *@This(), key: u64, val: *const T) Error!void {
                 var page = try this.table.pager.get(this.page);
                 try this.table.leafInsert(page, this.cell, key, val);
             }
@@ -125,9 +125,9 @@ pub fn Table(comptime PZ: u64, comptime PN: u64) type {
 
         /// Find all rows from the table and return an owned slice containing
         /// their data.
-        pub fn select(this: *@This(), allocator: std.mem.Allocator) Error![]Row {
+        pub fn select(this: *@This(), allocator: std.mem.Allocator) Error![]T {
             try this.pager.clean();
-            var rows = std.ArrayList(Row).init(allocator);
+            var rows = std.ArrayList(T).init(allocator);
             var cursor = try this.head();
             while (!cursor.end) {
                 const row_slot = try cursor.value_view();
@@ -139,7 +139,7 @@ pub fn Table(comptime PZ: u64, comptime PN: u64) type {
 
         /// Insert a new row into the table. Changes are not persisted until the
         /// page is flushed.
-        pub fn insert(this: *@This(), row: *const Row) Error!void {
+        pub fn insert(this: *@This(), row: *const T) Error!void {
             try this.pager.clean();
             var cursor = try this.find(this.root_page, row.id);
             const page = try this.pager.get(cursor.page);
@@ -215,10 +215,10 @@ pub fn Table(comptime PZ: u64, comptime PN: u64) type {
         /// - `cell`: The cell insert position.
         /// - `key`: The key of the new cell.
         /// - `val`: The value of the new cell.
-        fn leafInsert(this: *@This(), node: *Node, cell: u64, key: u64, val: *const Row) Error!void {
+        fn leafInsert(this: *@This(), node: *Node, cell: u64, key: u64, val: *const T) Error!void {
             std.debug.assert(node.header.type == .Leaf);
             if (node.body.leaf.num_cells >= NodeLeaf.MAX_CELLS) return this.leafSplitInsert(node, cell, key, val);
-            cellsInsert(Row, &node.body.leaf.cells, node.body.leaf.num_cells, cell, key, val);
+            cellsInsert(T, &node.body.leaf.cells, node.body.leaf.num_cells, cell, key, val);
             node.body.leaf.num_cells += 1;
         }
 
@@ -233,13 +233,13 @@ pub fn Table(comptime PZ: u64, comptime PN: u64) type {
         /// - `cell`: The cell id to insert the new cell.
         /// - `key`: The key of the new cell.
         /// - `val`: The value of the new cell.
-        fn leafSplitInsert(this: *@This(), lnode: *Node, cell: u64, key: u64, val: *const Row) Error!void {
+        fn leafSplitInsert(this: *@This(), lnode: *Node, cell: u64, key: u64, val: *const T) Error!void {
             std.debug.assert(lnode.header.type == .Leaf);
             const lnode_max_key_old = try this.getTreeMaxKey(lnode);
             const rnode_page = this.pager.getFree();
             const rnode = try this.pager.get(rnode_page);
             rnode.* = Node.init(lnode.header.parent, false, .Leaf);
-            cellsSplitInsert(Row, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
+            cellsSplitInsert(T, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
             rnode.body.leaf.num_cells = NodeLeaf.R_SPLIT_CELLS;
             rnode.body.leaf.next_leaf = lnode.body.leaf.next_leaf;
             lnode.body.leaf.num_cells = NodeLeaf.L_SPLIT_CELLS;
@@ -373,7 +373,14 @@ pub fn Table(comptime PZ: u64, comptime PN: u64) type {
         /// - `new_cell`: The index of the new cell to insert.
         /// - `key`: The key of the new cell.
         /// - `value`: The value of the new cell.
-        fn cellsInsert(comptime T: type, cells: []squeal_pager.NodeCell(T), cells_len: u64, new_cell: u64, key: u64, value: *const T) void {
+        fn cellsInsert(
+            comptime TCellValue: type,
+            cells: []squeal_pager.NodeCell(TCellValue),
+            cells_len: u64,
+            new_cell: u64,
+            key: u64,
+            value: *const TCellValue,
+        ) void {
             var cell = cells_len;
             while (cell > new_cell) : (cell -= 1) cells[cell] = cells[cell - 1];
             cells[cell].key = key;
@@ -397,19 +404,19 @@ pub fn Table(comptime PZ: u64, comptime PN: u64) type {
         /// - `key`: The key of the cell to insert.
         /// - `value`: The value of the cell to insert.
         fn cellsSplitInsert(
-            comptime T: type,
-            lcells: []squeal_pager.NodeCell(T),
-            rcells: []squeal_pager.NodeCell(T),
+            comptime TCellValue: type,
+            lcells: []squeal_pager.NodeCell(TCellValue),
+            rcells: []squeal_pager.NodeCell(TCellValue),
             split_at: u64,
             cell: u64,
             key: u64,
-            value: T,
+            value: TCellValue,
         ) void {
             var idx = lcells.len + 1;
             while (idx > 0) : (idx -= 1) {
                 const old_cell = idx - 1;
                 const new_cell = old_cell % split_at;
-                var cells: []squeal_pager.NodeCell(T) = undefined;
+                var cells: []squeal_pager.NodeCell(TCellValue) = undefined;
                 if (old_cell >= split_at) cells = rcells else cells = lcells;
                 if (old_cell < cell) {
                     // Cells come before the insertion point are copied as is

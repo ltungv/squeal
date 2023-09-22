@@ -4,7 +4,7 @@ const squeal_table = @import("table.zig");
 
 pub const PAGE_SIZE = 32 * 1024;
 pub const PAGE_COUNT = 1024 * 1024;
-pub const Table = squeal_table.Table(PAGE_SIZE, PAGE_COUNT);
+pub const Table = squeal_table.Table(squeal_table.Row, PAGE_SIZE, PAGE_COUNT);
 
 // The virtual machine that executes SQL statements.
 pub const Vm = struct {

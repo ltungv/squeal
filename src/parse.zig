@@ -9,10 +9,7 @@ pub const Parser = struct {
     token_curr: ?squeal_token.Token,
 
     /// Parse error.
-    pub const Error = error{
-        UnrecognizedCommand,
-        UnexpectedToken,
-    } ||
+    pub const Error = error{ UnrecognizedCommand, UnexpectedToken } ||
         squeal_table.Row.Error ||
         squeal_token.Tokenizer.Error ||
         std.fmt.ParseIntError;

@@ -5,7 +5,7 @@ const squeal_pager = @import("pager.zig");
 const squeal_table = @import("table.zig");
 
 const Row = squeal_table.Row;
-const Table = squeal_table.Table(4096, 64);
+const Table = squeal_table.Table(Row, 4096, 64);
 
 test "creating new row fails when key is too long" {
     const key: [Row.MAX_KEY_LEN + 1]u8 = undefined;
