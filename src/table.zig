@@ -63,14 +63,7 @@ pub const Table = struct {
     pub fn init(pager: *Pager) Error!@This() {
         if (pager.page_count == 0) {
             var root = try pager.get(0);
-            root.* = Node{
-                .header = NodeHeader{
-                    .parent = 0,
-                    .is_root = true,
-                    .type = NodeType.Leaf,
-                },
-                .body = undefined,
-            };
+            root.* = Node.init(0, true, .Leaf);
         }
         return Table{ .pager = pager, .root_page = 0 };
     }
@@ -172,12 +165,8 @@ pub const Table = struct {
         rnode.header.is_root = false;
         rnode.header.parent = this.root_page;
         // Initialize a new root node.
-        root.* = .{
-            .header = .{ .parent = 0, .is_root = true, .type = NodeType.Internal },
-            .body = .{
-                .internal = .{ .num_keys = 1, .right_child = @intCast(rnode_page), .cells = undefined },
-            },
-        };
+        root.* = Node.init(0, true, .Internal);
+        root.body.internal = .{ .num_keys = 1, .right_child = @intCast(rnode_page), .cells = undefined };
         root.body.internal.cells[0].key = key;
         root.body.internal.cells[0].val = @intCast(lnode_page);
         // Update children the left node if it's an internal node. The children
@@ -234,10 +223,7 @@ pub const Table = struct {
         // Allocate a new leaf node for the right child.
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
-        rnode.* = .{
-            .header = .{ .parent = lnode.header.parent, .is_root = false, .type = NodeType.Leaf },
-            .body = undefined,
-        };
+        rnode.* = Node.init(lnode.header.parent, false, .Leaf);
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
         // Insert the new cell while splitting the node evenly.
         splitInsert(Row, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
@@ -319,10 +305,7 @@ pub const Table = struct {
         // Allocate the new right child.
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
-        rnode.* = .{
-            .header = .{ .parent = lnode.header.parent, .is_root = false, .type = NodeType.Internal },
-            .body = undefined,
-        };
+        rnode.* = Node.init(lnode.header.parent, false, .Internal);
         const lnode_max_key_old = try this.getTreeMaxKey(lnode);
         const cell = lnode.body.internal.find(key);
         // Insert the new cell while splitting the node evenly

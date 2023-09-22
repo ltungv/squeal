@@ -9,6 +9,14 @@ pub fn Node(comptime T: type, comptime S: usize) type {
     return extern struct {
         header: NodeHeader,
         body: NodeBody(T, S),
+
+        /// Initialize a node.
+        pub fn init(parent: u64, is_root: bool, node_type: NodeType) @This() {
+            return .{
+                .header = NodeHeader.init(parent, is_root, node_type),
+                .body = NodeBody(T, S).init(node_type),
+            };
+        }
     };
 }
 
@@ -23,6 +31,11 @@ pub const NodeHeader = extern struct {
     parent: u64,
     is_root: bool,
     type: NodeType,
+
+    /// Initialize a node header.
+    pub fn init(parent: u64, is_root: bool, node_type: NodeType) @This() {
+        return .{ .parent = parent, .is_root = is_root, .type = node_type };
+    }
 };
 
 /// Body of a node in a B+ tree, which can be one of two types leaf or internal.
@@ -32,6 +45,14 @@ pub fn NodeBody(comptime T: type, comptime S: usize) type {
     return extern union {
         leaf: NodeLeaf(T, S),
         internal: NodeInternal(S),
+
+        /// Initialize a node body.
+        pub fn init(node_type: NodeType) @This() {
+            switch (node_type) {
+                .Leaf => return .{ .leaf = NodeLeaf(T, S).init() },
+                .Internal => return .{ .internal = NodeInternal(S).init() },
+            }
+        }
     };
 }
 
@@ -48,6 +69,11 @@ pub fn NodeLeaf(comptime T: type, comptime S: usize) type {
         pub const R_SPLIT_CELLS = (MAX_CELLS + 1) / 2;
         /// Number of cells in the left leaf node after splitting.
         pub const L_SPLIT_CELLS = (MAX_CELLS + 1) - R_SPLIT_CELLS;
+
+        /// Initialize a leaf node.
+        pub fn init() @This() {
+            return .{ .next_leaf = 0, .num_cells = 0, .cells = undefined };
+        }
 
         /// Find the index of the cell with the given key using binary search.
         /// If there's no cell with the given key, an index of where the cell
@@ -71,6 +97,11 @@ pub fn NodeInternal(comptime S: usize) type {
         pub const R_SPLIT_KEYS = (MAX_KEYS + 1) / 2;
         /// Number of cells in the left internal node after splitting.
         pub const L_SPLIT_KEYS = (MAX_KEYS + 1) - R_SPLIT_KEYS;
+
+        /// Initialize an internal node.
+        pub fn init() @This() {
+            return .{ .right_child = 0, .num_keys = 0, .cells = undefined };
+        }
 
         /// Return the child node index at the given index.
         pub fn getChild(this: *const @This(), index: u64) u64 {
