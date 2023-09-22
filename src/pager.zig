@@ -180,8 +180,8 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
 
         /// Deinitialize the pager.
         pub fn deinit(this: *@This()) void {
-            var node_it = this.page_cache.order_node_map.valueIterator();
-            while (node_it.next()) |node| this.allocator.destroy(node.*.data.value);
+            var cache_values_it = this.page_cache.entries.valueIterator();
+            while (cache_values_it.next()) |value| this.allocator.destroy(value.data);
             this.page_cache.deinit();
             this.file.close();
         }
