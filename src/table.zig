@@ -172,12 +172,7 @@ pub const Table = struct {
         // Update children the left node if it's an internal node. The children
         // of the right node should have their parent pointers updated by the
         // previous routine(s).
-        if (lnode.header.type == .Internal) {
-            for (lnode.body.internal.cells[0..lnode.body.internal.num_keys]) |index| {
-                const lnode_child = try this.pager.get(index.val);
-                lnode_child.header.parent = lnode_page;
-            }
-        }
+        if (lnode.header.type == .Internal) try this.internalSetChildrenParent(lnode, lnode_page);
     }
 
     /// This function is called to insert a new cell into the given leaf node.
@@ -191,20 +186,10 @@ pub const Table = struct {
     /// - `key`: The key of the new cell.
     /// - `val`: The value of the new cell.
     fn leafInsert(this: *@This(), node: *Node, cell: u64, key: u64, val: *const Row) Error!void {
-        if (node.body.leaf.num_cells >= NodeLeaf.MAX_CELLS) {
-            // Leaf is full so we split.
-            return this.leafSplitInsert(node, cell, key, val);
-        }
-        if (cell < node.body.leaf.num_cells) {
-            // Shift all cells after the insertion point 1 slot towards the
-            // end, leaving room for the new cell.
-            var idx = node.body.leaf.num_cells;
-            while (idx > cell) : (idx -= 1) {
-                node.body.leaf.cells[idx] = node.body.leaf.cells[idx - 1];
-            }
-        }
+        std.debug.assert(node.header.type == .Leaf);
+        if (node.body.leaf.num_cells >= NodeLeaf.MAX_CELLS) return this.leafSplitInsert(node, cell, key, val);
+        cellsInsert(Row, &node.body.leaf.cells, node.body.leaf.num_cells, cell, key, val);
         node.body.leaf.num_cells += 1;
-        node.body.leaf.cells[cell] = .{ .key = key, .val = val.* };
     }
 
     /// This function is called to insert a new cell into the given full leaf
@@ -220,13 +205,13 @@ pub const Table = struct {
     /// - `key`: The key of the new cell.
     /// - `val`: The value of the new cell.
     fn leafSplitInsert(this: *@This(), lnode: *Node, cell: u64, key: u64, val: *const Row) Error!void {
-        // Allocate a new leaf node for the right child.
+        std.debug.assert(lnode.header.type == .Leaf);
+        const lnode_max_key_old = try this.getTreeMaxKey(lnode);
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
         rnode.* = Node.init(lnode.header.parent, false, .Leaf);
-        const lnode_max_key_old = try this.getTreeMaxKey(lnode);
         // Insert the new cell while splitting the node evenly.
-        splitInsert(Row, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
+        cellsSplitInsert(Row, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
         rnode.body.leaf.num_cells = NodeLeaf.R_SPLIT_CELLS;
         rnode.body.leaf.next_leaf = lnode.body.leaf.next_leaf;
         lnode.body.leaf.num_cells = NodeLeaf.L_SPLIT_CELLS;
@@ -261,6 +246,7 @@ pub const Table = struct {
         lnode_max_key_old: u64,
         lnode_max_key_new: u64,
     ) Error!void {
+        std.debug.assert(node.header.type == .Internal);
         // Because we just performed a split at 1 tree level bellow, the max
         // key of node might have change so we update it here.
         node.body.internal.updateKey(lnode_max_key_old, lnode_max_key_new);
@@ -280,12 +266,7 @@ pub const Table = struct {
             // Shift all cells after the insertion point 1 slot towards the
             // end, leaving room for the new cell.
             const new_cell = node.body.internal.find(new_node_key);
-            var cell = node.body.internal.num_keys;
-            while (cell > new_cell) : (cell -= 1) {
-                node.body.internal.cells[cell] = node.body.internal.cells[cell - 1];
-            }
-            node.body.internal.cells[cell].key = new_node_key;
-            node.body.internal.cells[cell].val = new_node_page;
+            cellsInsert(u64, &node.body.internal.cells, node.body.internal.num_keys, new_cell, new_node_key, &new_node_page);
         }
         node.body.internal.num_keys += 1;
     }
@@ -302,14 +283,14 @@ pub const Table = struct {
     /// - `new_node_key`: The key of the new cell
     /// - `new_node_page`: The child of the new cell.
     fn internalSplitInsert(this: *@This(), lnode: *Node, key: u64, page: u64) Error!void {
-        // Allocate the new right child.
+        std.debug.assert(lnode.header.type == .Internal);
+        const cell = lnode.body.internal.find(key);
+        const lnode_max_key_old = try this.getTreeMaxKey(lnode);
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
         rnode.* = Node.init(lnode.header.parent, false, .Internal);
-        const lnode_max_key_old = try this.getTreeMaxKey(lnode);
-        const cell = lnode.body.internal.find(key);
         // Insert the new cell while splitting the node evenly
-        splitInsert(u64, &lnode.body.internal.cells, &rnode.body.internal.cells, NodeInternal.L_SPLIT_KEYS, cell, key, page);
+        cellsSplitInsert(u64, &lnode.body.internal.cells, &rnode.body.internal.cells, NodeInternal.L_SPLIT_KEYS, cell, key, page);
         lnode.body.internal.num_keys = NodeInternal.L_SPLIT_KEYS - 1;
         rnode.body.internal.num_keys = NodeInternal.R_SPLIT_KEYS;
         if (key > lnode_max_key_old) {
@@ -336,12 +317,7 @@ pub const Table = struct {
         lnode.body.internal.right_child = lnode.body.internal.cells[NodeInternal.L_SPLIT_KEYS - 1].val;
         // Update the parent pointers of the children of the right internal
         // node. At this point, all the children are pointing to the left node.
-        const rnode_rchild = try this.pager.get(rnode.body.internal.right_child);
-        rnode_rchild.header.parent = rnode_page;
-        for (rnode.body.internal.cells[0..rnode.body.internal.num_keys]) |index| {
-            const rchild_child = try this.pager.get(index.val);
-            rchild_child.header.parent = rnode_page;
-        }
+        try this.internalSetChildrenParent(rnode, rnode_page);
         // Create a new root using the max key of the left node.
         const lnode_max_key_new = try this.getTreeMaxKey(lnode);
         if (lnode.header.is_root) return this.createNewRoot(lnode, lnode_max_key_new, rnode, rnode_page);
@@ -352,6 +328,16 @@ pub const Table = struct {
         try this.internalInsert(parent, rchild_tree_max_key, rnode_page, lnode_max_key_old, lnode_max_key_new);
     }
 
+    fn internalSetChildrenParent(this: *@This(), node: *Node, parent: u64) Error!void {
+        std.debug.assert(node.header.type == .Internal);
+        for (node.body.internal.cells[0..node.body.internal.num_keys]) |index| {
+            const child = try this.pager.get(index.val);
+            child.header.parent = parent;
+        }
+        const child = try this.pager.get(node.body.internal.right_child);
+        child.header.parent = parent;
+    }
+
     /// Get the max key value of the tree rooted at the given page.
     fn getTreeMaxKey(this: *@This(), page: *Node) Error!u64 {
         switch (page.header.type) {
@@ -359,22 +345,6 @@ pub const Table = struct {
             .Internal => {
                 const right_child = try this.pager.get(page.body.internal.right_child);
                 return this.getTreeMaxKey(right_child);
-            },
-        }
-    }
-
-    /// Get the number of leaf cells count in the the tree rooted at the given page.
-    fn getLeafCellsCount(this: *@This(), page: *Node) Error!u64 {
-        switch (page.header.type) {
-            .Leaf => return page.body.leaf.num_cells,
-            .Internal => {
-                var child = try this.pager.get(page.body.internal.right_child);
-                var sum = try this.getLeafCellsCount(child);
-                for (page.body.internal.cells[0..page.body.internal.num_keys]) |cell| {
-                    child = try this.pager.get(cell.val);
-                    sum += try this.getLeafCellsCount(child);
-                }
-                return sum;
             },
         }
     }
@@ -426,6 +396,13 @@ pub const Cursor = struct {
     }
 };
 
+fn cellsInsert(comptime T: type, cells: []NodeCell(T), cells_len: u64, new_cell: u64, key: u64, value: *const T) void {
+    var cell = cells_len;
+    while (cell > new_cell) : (cell -= 1) cells[cell] = cells[cell - 1];
+    cells[cell].key = key;
+    cells[cell].val = value.*;
+}
+
 /// Insert into a full list of cells by splitting it into two before inserting.
 /// After splitting, the first half of the original list remains while the last
 /// half is copied into another list.
@@ -442,7 +419,7 @@ pub const Cursor = struct {
 /// - `cell`: The index of the cell to insert in the original list.
 /// - `key`: The key of the cell to insert.
 /// - `value`: The value of the cell to insert.
-fn splitInsert(
+fn cellsSplitInsert(
     comptime T: type,
     lcells: []NodeCell(T),
     rcells: []NodeCell(T),
