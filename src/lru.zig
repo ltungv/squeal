@@ -21,7 +21,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
 
         /// A hash map keeping cache entries along with a reference to their
         /// nodes in the doubly-linked list.
-        const HashMap = std.AutoHashMapUnmanaged(K, OrderedValue);
+        const HashMap = std.AutoHashMap(K, OrderedValue);
 
         /// An entry in the cache.
         pub const Entry = struct { key: K, value: V };
@@ -34,7 +34,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
             return .{
                 .allocator = allocator,
                 .max_size = max_size,
-                .entries = HashMap{},
+                .entries = HashMap.init(allocator),
                 .keys_order = Dequeue{},
             };
         }
@@ -43,7 +43,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
         pub fn deinit(this: *@This()) void {
             var values_it = this.entries.valueIterator();
             while (values_it.next()) |value| this.allocator.destroy(value.node);
-            this.entries.deinit(this.allocator);
+            this.entries.deinit();
         }
 
         /// Get the value at the given key.
@@ -60,7 +60,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
         /// currently associated with it.
         pub fn set(this: *@This(), key: K, value: V) Error!?V {
             var replaced_value: ?V = null;
-            var entry = try this.entries.getOrPut(this.allocator, key);
+            var entry = try this.entries.getOrPut(key);
             if (entry.found_existing) {
                 replaced_value = entry.value_ptr.data;
                 this.keys_order.remove(entry.value_ptr.node);
@@ -76,7 +76,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
         /// Removes the least-recently used entry from the cache and returns it.
         /// If the cache is not over capacity, null is returned.
         pub fn invalidate(this: *@This()) Error!?Entry {
-            if (this.entries.size <= this.max_size) return null;
+            if (this.entries.count() <= this.max_size) return null;
             if (this.keys_order.pop()) |node| {
                 if (this.entries.fetchRemove(node.data)) |entry| {
                     this.allocator.destroy(entry.value.node);
