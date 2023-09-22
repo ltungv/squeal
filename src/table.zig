@@ -153,9 +153,8 @@ pub const Table = struct {
     /// - `rnode`: The right child node of the new root.
     /// - `rnode_page`: The page number of the right child node.
     fn createNewRoot(this: *@This(), root: *Node, key: u64, rnode: *Node, rnode_page: u64) Error!void {
-        // Allocate a new page for the left node of the new root, then copy the
-        // current root into the left node. The current root page contains the
-        // left node resulted from a previous split.
+        // Allocate a new page, then copy the current root into it. The current
+        // root page contains the left node resulted from a previous split.
         const lnode_page = this.pager.getFree();
         const lnode = try this.pager.get(lnode_page);
         lnode.* = root.*;
@@ -169,15 +168,13 @@ pub const Table = struct {
         root.body.internal = .{ .num_keys = 1, .right_child = @intCast(rnode_page), .cells = undefined };
         root.body.internal.cells[0].key = key;
         root.body.internal.cells[0].val = @intCast(lnode_page);
-        // Update children the left node if it's an internal node. The children
-        // of the right node should have their parent pointers updated by the
-        // previous routine(s).
+        // The children of the right node should have been updated
         if (lnode.header.type == .Internal) try this.internalSetChildrenParent(lnode, lnode_page);
     }
 
-    /// This function is called to insert a new cell into the given leaf node.
-    /// This function assume the node body union is of a leaf node. Thus, the
-    /// caller must check the node type before calling this function.
+    /// This function is called to insert a new cell into the given leaf node
+    /// assuming the node is a leaf node. The caller must check the node type
+    /// before calling this function.
     ///
     /// ## Arguments
     ///
@@ -193,10 +190,9 @@ pub const Table = struct {
     }
 
     /// This function is called to insert a new cell into the given full leaf
-    /// node. The function will split the leaf to make space for the new cell
-    /// and update the tree accordingly. This function assume the node body
-    /// union is of a leaf node. Thus, the caller must check the node type
-    /// before calling this function.
+    /// node assuming the node body is a leaf node. The caller must check the
+    /// node type before calling this function. The leaf will be splitted to
+    /// make space for the new cell when it's full.
     ///
     /// ## Arguments
     ///
@@ -210,78 +206,65 @@ pub const Table = struct {
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
         rnode.* = Node.init(lnode.header.parent, false, .Leaf);
-        // Insert the new cell while splitting the node evenly.
         cellsSplitInsert(Row, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
         rnode.body.leaf.num_cells = NodeLeaf.R_SPLIT_CELLS;
         rnode.body.leaf.next_leaf = lnode.body.leaf.next_leaf;
         lnode.body.leaf.num_cells = NodeLeaf.L_SPLIT_CELLS;
         lnode.body.leaf.next_leaf = rnode_page;
-        // Create a new root using the max key of the left node.
+        // Create a new root.
         const lnode_max_key_new = try this.getTreeMaxKey(lnode);
         if (lnode.header.is_root) return this.createNewRoot(lnode, lnode_max_key_new, rnode, rnode_page);
-        // Insert the max key of the right node into the parent node. We pass
-        // the current and new max key of the left node, in case it was updated.
+        // Insert the max key of the right node into the parent node
         const rnode_max_key = try this.getTreeMaxKey(rnode);
         const parent = try this.pager.get(lnode.header.parent);
         try this.internalInsert(parent, rnode_max_key, rnode_page, lnode_max_key_old, lnode_max_key_new);
     }
 
     /// This function is called to insert a new cell into the given internal
-    /// node. This function assume the node body union is of an internal node.
-    /// Thus, the caller must check the node type before calling this function.
-    ///
+    /// node assuming the node body union is an internal node. The caller must
+    /// check the node type before calling this function.
     ///
     /// ## Arguments
     ///
-    /// - `page_node`: The internal node.
-    /// - `new_node_key`: The key of the new cell
-    /// - `new_node_page`: The child of the new cell.
+    /// - `node`: The internal node.
+    /// - `key`: The key of the new cell
+    /// - `page`: The child of the new cell.
     /// - `lnode_max_key_old`: The old key value of the cell
     /// - `lnode_max_key_new`: The new key value of the cell
-    fn internalInsert(
-        this: *@This(),
-        node: *Node,
-        new_node_key: u64,
-        new_node_page: u64,
-        lnode_max_key_old: u64,
-        lnode_max_key_new: u64,
-    ) Error!void {
+    fn internalInsert(this: *@This(), node: *Node, key: u64, page: u64, lnode_max_key_old: u64, lnode_max_key_new: u64) Error!void {
         std.debug.assert(node.header.type == .Internal);
-        // Because we just performed a split at 1 tree level bellow, the max
-        // key of node might have change so we update it here.
+        // We just performed a split at 1 tree level bellow, so the max key
+        // might have change.
         node.body.internal.updateKey(lnode_max_key_old, lnode_max_key_new);
         if (node.body.internal.num_keys >= NodeInternal.MAX_KEYS) {
-            return this.internalSplitInsert(node, new_node_key, new_node_page);
+            return this.internalSplitInsert(node, key, page);
         }
         const rchild = try this.pager.get(node.body.internal.right_child);
         const rchild_max_key = try this.getTreeMaxKey(rchild);
-        if (new_node_key > rchild_max_key) {
+        if (key > rchild_max_key) {
             // The insert key is larger than the largest key in the subtree,
             // thus the page become the new right child of the node. The
             // previous right child is now included in a cell.
             node.body.internal.cells[node.body.internal.num_keys].key = rchild_max_key;
             node.body.internal.cells[node.body.internal.num_keys].val = node.body.internal.right_child;
-            node.body.internal.right_child = new_node_page;
+            node.body.internal.right_child = page;
         } else {
-            // Shift all cells after the insertion point 1 slot towards the
-            // end, leaving room for the new cell.
-            const new_cell = node.body.internal.find(new_node_key);
-            cellsInsert(u64, &node.body.internal.cells, node.body.internal.num_keys, new_cell, new_node_key, &new_node_page);
+            const new_cell = node.body.internal.find(key);
+            cellsInsert(u64, &node.body.internal.cells, node.body.internal.num_keys, new_cell, key, &page);
         }
         node.body.internal.num_keys += 1;
     }
 
     /// This function is called to insert a new cell into the given full
-    /// internal node. The function will split the node to make space for the
-    /// new cell and update the tree accordingly. This function assume the node
-    /// body union is of an internal node. Thus, the caller must check the node
-    /// type before calling this function.
+    /// internal node assuming the node body is an internal node. The caller
+    /// must check the node type before calling this function. The node will
+    /// be splitted to make space for the new cell when it's full.
     ///
     /// ## Arguments
     ///
-    /// - `page_node`: The internal node.
-    /// - `new_node_key`: The key of the new cell
-    /// - `new_node_page`: The child of the new cell.
+    /// - `lnode`: The internal node.
+    /// - `key`: The key of the new cell
+    /// - `page`: The child of the new cell.
     fn internalSplitInsert(this: *@This(), lnode: *Node, key: u64, page: u64) Error!void {
         std.debug.assert(lnode.header.type == .Internal);
         const cell = lnode.body.internal.find(key);
@@ -289,7 +272,6 @@ pub const Table = struct {
         const rnode_page = this.pager.getFree();
         const rnode = try this.pager.get(rnode_page);
         rnode.* = Node.init(lnode.header.parent, false, .Internal);
-        // Insert the new cell while splitting the node evenly
         cellsSplitInsert(u64, &lnode.body.internal.cells, &rnode.body.internal.cells, NodeInternal.L_SPLIT_KEYS, cell, key, page);
         lnode.body.internal.num_keys = NodeInternal.L_SPLIT_KEYS - 1;
         rnode.body.internal.num_keys = NodeInternal.R_SPLIT_KEYS;
@@ -396,6 +378,17 @@ pub const Cursor = struct {
     }
 };
 
+/// Insert into a list of cells by shifting all cells after the insertion point
+/// 1 slot towards the end, leaving room for the new cell.
+///
+/// ## Arguments
+///
+/// - `T`: The type of the value stored in the cells.
+/// - `cells`: The list of cells.
+/// - `cells_len`: The length of the list of cells.
+/// - `new_cell`: The index of the new cell to insert.
+/// - `key`: The key of the new cell.
+/// - `value`: The value of the new cell.
 fn cellsInsert(comptime T: type, cells: []NodeCell(T), cells_len: u64, new_cell: u64, key: u64, value: *const T) void {
     var cell = cells_len;
     while (cell > new_cell) : (cell -= 1) cells[cell] = cells[cell - 1];
