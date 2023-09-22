@@ -2,20 +2,24 @@ const std = @import("std");
 const squeal_parse = @import("parse.zig");
 const squeal_table = @import("table.zig");
 
+pub const PAGE_SIZE = 32 * 1024;
+pub const PAGE_COUNT = 1024 * 1024;
+pub const Table = squeal_table.Table(PAGE_SIZE, PAGE_COUNT);
+
 // The virtual machine that executes SQL statements.
 pub const Vm = struct {
     allocator: std.mem.Allocator,
     stream: *const Stream,
-    table: *squeal_table.Table,
+    table: *Table,
 
     /// VM's error.
-    const Error = Stream.ReadError || Stream.WriteError || squeal_table.Table.Error;
+    const Error = Stream.ReadError || Stream.WriteError || Table.Error;
 
     /// Create a new VM.
     pub fn init(
         allocator: std.mem.Allocator,
         stream: *const Stream,
-        table: *squeal_table.Table,
+        table: *Table,
     ) Error!@This() {
         return .{
             .allocator = allocator,
@@ -30,7 +34,7 @@ pub const Vm = struct {
         while (!finished) {
             try this.stream.print("db > ");
 
-            var line_buf: [squeal_table.PAGE_SIZE]u8 = undefined;
+            var line_buf: [PAGE_SIZE]u8 = undefined;
             const line = this.stream.readln(&line_buf) catch |err| {
                 try this.stream.eprint(err);
                 continue;

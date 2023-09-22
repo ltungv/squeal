@@ -204,9 +204,8 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         pub fn get(this: *@This(), page_num: u64) Error!*Node(T, PAGE_SIZE) {
             if (page_num >= PAGE_COUNT) return Error.OutOfBound;
             if (this.page_cache.get(page_num)) |page| return page;
-            // Cache miss.
+            // Cache miss, load page from disk if it exists.
             var page = try this.allocator.create(Node(T, PAGE_SIZE));
-            // Load page from disk if it exists.
             if (page_num < this.len / PAGE_SIZE) {
                 var page_buf: [PAGE_SIZE]u8 = undefined;
                 const read_bytes = try this.file.preadAll(&page_buf, page_num * PAGE_SIZE);
@@ -215,7 +214,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
                 var reader = stream.reader();
                 page.* = try reader.readStruct(Node(T, PAGE_SIZE));
             }
-            // Cache page.
+            // Write page to memory.
             if (try this.page_cache.set(page_num, page)) |replaced_page| {
                 try this.writePage(page_num, replaced_page);
                 this.allocator.destroy(replaced_page);

@@ -33,10 +33,10 @@ pub fn expectVmOutputGivenInput(allocator: std.mem.Allocator, path: []const u8, 
     var ostream = std.io.StreamSource{ .buffer = std.io.fixedBufferStream(output) };
     const stream = squeal_vm.Stream.new(&istream, &ostream);
 
-    var pager = try squeal_table.Pager.init(allocator, path);
+    var pager = try squeal_vm.Table.Pager.init(allocator, path);
     defer pager.deinit();
 
-    var table = try squeal_table.Table.init(&pager);
+    var table = try squeal_vm.Table.init(&pager);
     defer table.deinit() catch unreachable;
 
     var vm = try squeal_vm.Vm.init(allocator, &stream, &table);

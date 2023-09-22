@@ -3,24 +3,20 @@ const debug = std.debug;
 
 /// An LRU cache backed by a hash map and a doubly-linked list. Two functions
 /// `hash` and `eql` are automatically generated for the key type so it can be
-/// used in the hash map. The cache only invalidate entries when asked to.
+/// used in the hash map. The cache only invalidates entries when asked to.
 pub fn AutoLruCache(comptime K: type, comptime V: type) type {
     return struct {
         allocator: std.mem.Allocator,
         max_size: usize,
-        entries: HashMap,
-        keys_order: Dequeue,
-
-        /// A doubly-linked list that keeps track of the order in which keys are
-        /// used recently.
-        const Dequeue = std.TailQueue(K);
-
-        /// A value in the cache attached with a dequeue node representing its
-        /// recent usage order.
-        const OrderedValue = struct { data: V, node: *Dequeue.Node };
-
         /// A hash map keeping cache entries along with a reference to their
         /// nodes in the doubly-linked list.
+        entries: HashMap,
+        /// A doubly-linked list that keeps track of the order in which keys are
+        /// used recently.
+        keys_order: Dequeue,
+
+        const Dequeue = std.TailQueue(K);
+        const OrderedValue = struct { data: V, node: *Dequeue.Node };
         const HashMap = std.AutoHashMap(K, OrderedValue);
 
         /// An entry in the cache.
@@ -57,7 +53,7 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
         }
 
         /// Set the value at the given key and overwrite any value that is
-        /// currently associated with it.
+        /// currently associated with it. The overwritten value is returned.
         pub fn set(this: *@This(), key: K, value: V) Error!?V {
             var replaced_value: ?V = null;
             var entry = try this.entries.getOrPut(key);
