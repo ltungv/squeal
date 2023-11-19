@@ -1,23 +1,11 @@
 const std = @import("std");
 const testing = std.testing;
 const squeal_pager = @import("pager.zig");
+const squeal_table = @import("table.zig");
 
-const TestPager = squeal_pager.Pager(u64, 4096, 64);
-
-test "node size check" {
-    try testing.expect(@sizeOf(squeal_pager.Node(u8, 4096)) <= 4096);
-    try testing.expect(@sizeOf(squeal_pager.Node(u16, 4096)) <= 4096);
-    try testing.expect(@sizeOf(squeal_pager.Node(u32, 4096)) <= 4096);
-    try testing.expect(@sizeOf(squeal_pager.Node(u64, 4096)) <= 4096);
-
-    try testing.expect(@sizeOf(squeal_pager.Node(i8, 4096)) <= 4096);
-    try testing.expect(@sizeOf(squeal_pager.Node(i16, 4096)) <= 4096);
-    try testing.expect(@sizeOf(squeal_pager.Node(i32, 4096)) <= 4096);
-    try testing.expect(@sizeOf(squeal_pager.Node(i64, 4096)) <= 4096);
-
-    try testing.expect(@sizeOf(squeal_pager.Node(f32, 4096)) <= 4096);
-    try testing.expect(@sizeOf(squeal_pager.Node(f64, 4096)) <= 4096);
-}
+const PAGE_SIZE = 4096;
+const TestPage = squeal_table.Node(u64, PAGE_SIZE);
+const TestPager = squeal_pager.Pager(TestPage, PAGE_SIZE, 64);
 
 test "page init" {
     var pager = try TestPager.init(testing.allocator, "test.squeal");

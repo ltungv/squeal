@@ -2,139 +2,10 @@ const std = @import("std");
 const debug = std.debug;
 const squeal_lru = @import("lru.zig");
 
-/// A node within a B+ tree, which can be one of two types:
-/// + Leaf node containing data entries and their keys.
-/// + Internal node containing key indices and pointers to child node.
-pub fn Node(comptime T: type, comptime S: usize) type {
-    return extern struct {
-        header: NodeHeader,
-        body: NodeBody(T, S),
-
-        /// Initialize a node.
-        pub fn init(parent: u64, is_root: bool, node_type: NodeType) @This() {
-            return .{
-                .header = NodeHeader.init(parent, is_root, node_type),
-                .body = NodeBody(T, S).init(node_type),
-            };
-        }
-    };
-}
-
-/// Type of a node in a B+ tree.
-pub const NodeType = enum(u8) {
-    Leaf,
-    Internal,
-};
-
-/// Header of a node in a B+ tree containing its metadata.
-pub const NodeHeader = extern struct {
-    parent: u64,
-    is_root: bool,
-    type: NodeType,
-
-    /// Initialize a node header.
-    pub fn init(parent: u64, is_root: bool, node_type: NodeType) @This() {
-        return .{ .parent = parent, .is_root = is_root, .type = node_type };
-    }
-};
-
-/// Body of a node in a B+ tree, which can be one of two types leaf or internal.
-/// The node type is determined explicitly by the header insteading of using
-/// Zig's tagged union.
-pub fn NodeBody(comptime T: type, comptime S: usize) type {
-    return extern union {
-        leaf: NodeLeaf(T, S),
-        internal: NodeInternal(S),
-
-        /// Initialize a node body.
-        pub fn init(node_type: NodeType) @This() {
-            switch (node_type) {
-                .Leaf => return .{ .leaf = NodeLeaf(T, S).init() },
-                .Internal => return .{ .internal = NodeInternal(S).init() },
-            }
-        }
-    };
-}
-
-/// Content of a leaf node in a B+ tree.
-pub fn NodeLeaf(comptime T: type, comptime S: usize) type {
-    return extern struct {
-        next_leaf: u64,
-        num_cells: u64,
-        cells: [MAX_CELLS]NodeCell(T),
-
-        /// Max number of data cells a leaf node can hold.
-        pub const MAX_CELLS = (S - @sizeOf(NodeHeader) - @sizeOf(u64) * 2) / @sizeOf(NodeCell(T));
-        /// Number of cells in the right leaf node after splitting.
-        pub const R_SPLIT_CELLS = (MAX_CELLS + 1) / 2;
-        /// Number of cells in the left leaf node after splitting.
-        pub const L_SPLIT_CELLS = (MAX_CELLS + 1) - R_SPLIT_CELLS;
-
-        /// Initialize a leaf node.
-        pub fn init() @This() {
-            return .{ .next_leaf = 0, .num_cells = 0, .cells = undefined };
-        }
-
-        /// Find the index of the cell with the given key using binary search.
-        /// If there's no cell with the given key, an index of where the cell
-        /// should be is returned.
-        pub fn find(this: *const @This(), key: u64) u64 {
-            return searchCells(T, this.cells[0..this.num_cells], key);
-        }
-    };
-}
-
-/// Content of an internal node in a B+ tree.
-pub fn NodeInternal(comptime S: usize) type {
-    return extern struct {
-        right_child: u64,
-        num_keys: u64,
-        cells: [MAX_KEYS]NodeCell(u64),
-
-        /// Max number of data cells an internal node can hold.
-        pub const MAX_KEYS = (S - @sizeOf(NodeHeader) - @sizeOf(u64) * 2) / @sizeOf(NodeCell(u64));
-        /// Number of cells in the right internal node after splitting.
-        pub const R_SPLIT_KEYS = (MAX_KEYS + 1) / 2;
-        /// Number of cells in the left internal node after splitting.
-        pub const L_SPLIT_KEYS = (MAX_KEYS + 1) - R_SPLIT_KEYS;
-
-        /// Initialize an internal node.
-        pub fn init() @This() {
-            return .{ .right_child = 0, .num_keys = 0, .cells = undefined };
-        }
-
-        /// Return the child node index at the given index.
-        pub fn getChild(this: *const @This(), index: u64) u64 {
-            if (index == this.num_keys) return this.right_child;
-            return this.cells[index].val;
-        }
-
-        /// Find the index of the cell with the given key using binary search.
-        /// If there's no cell with the given key, an index of where the cell
-        /// should be is returned.
-        pub fn find(this: *const @This(), key: u64) u64 {
-            return searchCells(u64, this.cells[0..this.num_keys], key);
-        }
-
-        /// Find the index at old_key and update its value to new_key.
-        pub fn updateKey(this: *@This(), old_key: u64, new_key: u64) void {
-            const index = this.find(old_key);
-            if (index < this.num_keys) this.cells[index].key = new_key;
-        }
-    };
-}
-
-/// A data cell within a node in a B+ tree.
-pub fn NodeCell(comptime T: type) type {
-    return extern struct {
-        key: u64,
-        val: T,
-    };
-}
-
 /// A pager is responsible for reading and writing pages (blocks of data) to a file.
 /// Changes made on a page are not persisted until the page is flushed.
 pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64) type {
+    if (@sizeOf(T) > PAGE_SIZE) @compileError("size of type is large than the page size");
     return struct {
         allocator: std.mem.Allocator,
         len: u64,
@@ -142,7 +13,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         page_count: u64,
         page_cache: Cache,
 
-        const Cache = squeal_lru.AutoLruCache(u64, *Node(T, PAGE_SIZE));
+        const Cache = squeal_lru.AutoLruCache(u64, *T);
 
         /// Error that occurs when using a pager.
         pub const Error = error{ Corrupted, EndOfStream, FileSystem, NotSupported, NullPage, OutOfBound } ||
@@ -194,18 +65,18 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         }
 
         /// Get a pointer to a cached page. If the page is not in cache, it will be read from disk.
-        pub fn get(this: *@This(), page_num: u64) Error!*Node(T, PAGE_SIZE) {
+        pub fn get(this: *@This(), page_num: u64) Error!*T {
             if (page_num >= PAGE_COUNT) return Error.OutOfBound;
             if (this.page_cache.get(page_num)) |page| return page;
             // Cache miss, load page from disk if it exists.
-            var page = try this.allocator.create(Node(T, PAGE_SIZE));
+            var page = try this.allocator.create(T);
             if (page_num < this.len / PAGE_SIZE) {
                 var page_buf: [PAGE_SIZE]u8 = undefined;
                 const read_bytes = try this.file.preadAll(&page_buf, page_num * PAGE_SIZE);
                 debug.assert(read_bytes == PAGE_SIZE);
                 var stream = std.io.fixedBufferStream(&page_buf);
                 var reader = stream.reader();
-                page.* = try reader.readStruct(Node(T, PAGE_SIZE));
+                page.* = try reader.readStruct(T);
             }
             // Write page to memory.
             if (try this.page_cache.set(page_num, page)) |replaced_page| {
@@ -231,7 +102,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         }
 
         /// Write a whole page to disk at the correct offset based on the page number.
-        fn writePage(this: *@This(), page_num: u64, page: *const Node(T, PAGE_SIZE)) Error!void {
+        fn writePage(this: *@This(), page_num: u64, page: *const T) Error!void {
             var buf: [PAGE_SIZE]u8 = undefined;
             var stream = std.io.fixedBufferStream(&buf);
             var writer = stream.writer();
@@ -240,16 +111,4 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             this.len = @max(this.len, page_num * PAGE_SIZE + PAGE_SIZE);
         }
     };
-}
-
-fn searchCells(comptime T: type, cells: []const NodeCell(T), key: u64) u64 {
-    var left: u64 = 0;
-    var right: u64 = cells.len;
-    while (left < right) {
-        const index = (left + right) / 2;
-        const cell = cells[index];
-        if (key == cell.key) return index;
-        if (key < cell.key) right = index else left = index + 1;
-    }
-    return left;
 }

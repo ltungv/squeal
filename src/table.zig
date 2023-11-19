@@ -1,54 +1,18 @@
 const std = @import("std");
 const squeal_pager = @import("pager.zig");
 
-/// A row in the data table.
-pub const Row = extern struct {
-    id: u64,
-    key_len: u8,
-    val_len: u8,
-    key_buf: [MAX_KEY_LEN]u8,
-    val_buf: [MAX_VAL_LEN]u8,
-
-    /// Max length of a key.
-    pub const MAX_KEY_LEN = (1 << 8) - 1;
-    /// Max length of a value.
-    pub const MAX_VAL_LEN = (1 << 8) - 1;
-
-    /// Row's error.
-    pub const Error = error{ KeyTooLong, ValueTooLong };
-
-    /// Create a new row.
-    pub fn new(id: u64, key: []const u8, val: []const u8) Error!@This() {
-        if (key.len > MAX_KEY_LEN) return Error.KeyTooLong;
-        if (val.len > MAX_VAL_LEN) return Error.ValueTooLong;
-        var key_buf: [MAX_KEY_LEN]u8 = undefined;
-        var val_buf: [MAX_VAL_LEN]u8 = undefined;
-        std.mem.copy(u8, &key_buf, key);
-        std.mem.copy(u8, &val_buf, val);
-        return .{
-            .id = id,
-            .key_len = @intCast(key.len),
-            .val_len = @intCast(val.len),
-            .key_buf = key_buf,
-            .val_buf = val_buf,
-        };
-    }
-};
-
 /// A table is a collection of persistent rows stored in a B+ tree structure
 /// for fast lookups. Rows are stored in pages, which are managed by a pager
 /// that caches pages and flushes them to disk when needed.
-pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
+pub fn Table(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64) type {
     return struct {
         pager: *Pager,
         root_page: u64,
 
-        const TTable = @This();
-
-        pub const Node = squeal_pager.Node(T, PZ);
-        pub const NodeLeaf = squeal_pager.NodeLeaf(T, PZ);
-        pub const NodeInternal = squeal_pager.NodeInternal(PZ);
-        pub const Pager = squeal_pager.Pager(T, PZ, PN);
+        pub const TreeNode = Node(T, PAGE_SIZE);
+        pub const TreeLeaf = NodeLeaf(T, PAGE_SIZE);
+        pub const TreeInternal = NodeInternal(PAGE_SIZE);
+        pub const Pager = squeal_pager.Pager(TreeNode, PAGE_SIZE, PAGE_COUNT);
 
         /// Error that occurs when working with a table.
         pub const Error = error{ TableFull, DuplicateKey } || Pager.Error;
@@ -57,7 +21,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         /// When creating a cursor, we must make sure that `page` points to
         /// a leaf node.
         pub const Cursor = struct {
-            table: *TTable,
+            table: *Table(T, PAGE_SIZE, PAGE_COUNT),
             page: u64,
             cell: u64,
             end: bool,
@@ -101,7 +65,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         pub fn init(pager: *Pager) Error!@This() {
             if (pager.page_count == 0) {
                 var root = try pager.get(0);
-                root.* = Node.init(0, true, .Leaf);
+                root.* = TreeNode.init(0, true, .Leaf);
             }
             return .{ .pager = pager, .root_page = 0 };
         }
@@ -186,7 +150,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         /// - `key`: The key to be inserted into the new root.
         /// - `rnode`: The right child node of the new root.
         /// - `rnode_page`: The page number of the right child node.
-        fn createNewRoot(this: *@This(), root: *Node, key: u64, rnode: *Node, rnode_page: u64) Error!void {
+        fn createNewRoot(this: *@This(), root: *TreeNode, key: u64, rnode: *TreeNode, rnode_page: u64) Error!void {
             // Allocate a new page, then copy the current root into it. The current
             // root page contains the left node resulted from a previous split.
             const lnode_page = this.pager.getFree();
@@ -198,7 +162,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
             rnode.header.is_root = false;
             rnode.header.parent = this.root_page;
             // Initialize a new root node.
-            root.* = Node.init(0, true, .Internal);
+            root.* = TreeNode.init(0, true, .Internal);
             root.body.internal = .{ .num_keys = 1, .right_child = @intCast(rnode_page), .cells = undefined };
             root.body.internal.cells[0].key = key;
             root.body.internal.cells[0].val = @intCast(lnode_page);
@@ -215,9 +179,9 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         /// - `cell`: The cell insert position.
         /// - `key`: The key of the new cell.
         /// - `val`: The value of the new cell.
-        fn leafInsert(this: *@This(), node: *Node, cell: u64, key: u64, val: *const T) Error!void {
+        fn leafInsert(this: *@This(), node: *TreeNode, cell: u64, key: u64, val: *const T) Error!void {
             std.debug.assert(node.header.type == .Leaf);
-            if (node.body.leaf.num_cells >= NodeLeaf.MAX_CELLS) return this.leafSplitInsert(node, cell, key, val);
+            if (node.body.leaf.num_cells >= TreeLeaf.MAX_CELLS) return this.leafSplitInsert(node, cell, key, val);
             cellsInsert(T, &node.body.leaf.cells, node.body.leaf.num_cells, cell, key, val);
             node.body.leaf.num_cells += 1;
         }
@@ -233,16 +197,16 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         /// - `cell`: The cell id to insert the new cell.
         /// - `key`: The key of the new cell.
         /// - `val`: The value of the new cell.
-        fn leafSplitInsert(this: *@This(), lnode: *Node, cell: u64, key: u64, val: *const T) Error!void {
+        fn leafSplitInsert(this: *@This(), lnode: *TreeNode, cell: u64, key: u64, val: *const T) Error!void {
             std.debug.assert(lnode.header.type == .Leaf);
             const lnode_max_key_old = try this.getTreeMaxKey(lnode);
             const rnode_page = this.pager.getFree();
             const rnode = try this.pager.get(rnode_page);
-            rnode.* = Node.init(lnode.header.parent, false, .Leaf);
-            cellsSplitInsert(T, &lnode.body.leaf.cells, &rnode.body.leaf.cells, NodeLeaf.L_SPLIT_CELLS, cell, key, val.*);
-            rnode.body.leaf.num_cells = NodeLeaf.R_SPLIT_CELLS;
+            rnode.* = TreeNode.init(lnode.header.parent, false, .Leaf);
+            cellsSplitInsert(T, &lnode.body.leaf.cells, &rnode.body.leaf.cells, TreeLeaf.L_SPLIT_CELLS, cell, key, val.*);
+            rnode.body.leaf.num_cells = TreeLeaf.R_SPLIT_CELLS;
             rnode.body.leaf.next_leaf = lnode.body.leaf.next_leaf;
-            lnode.body.leaf.num_cells = NodeLeaf.L_SPLIT_CELLS;
+            lnode.body.leaf.num_cells = TreeLeaf.L_SPLIT_CELLS;
             lnode.body.leaf.next_leaf = rnode_page;
             // Create a new root.
             const lnode_max_key_new = try this.getTreeMaxKey(lnode);
@@ -264,12 +228,12 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         /// - `page`: The child of the new cell.
         /// - `lnode_max_key_old`: The old key value of the cell.
         /// - `lnode_max_key_new`: The new key value of the cell.
-        fn internalInsert(this: *@This(), node: *Node, key: u64, page: u64, lnode_max_key_old: u64, lnode_max_key_new: u64) Error!void {
+        fn internalInsert(this: *@This(), node: *TreeNode, key: u64, page: u64, lnode_max_key_old: u64, lnode_max_key_new: u64) Error!void {
             std.debug.assert(node.header.type == .Internal);
             // We just performed a split at 1 tree level bellow, so the max key
             // might have change.
             node.body.internal.updateKey(lnode_max_key_old, lnode_max_key_new);
-            if (node.body.internal.num_keys >= NodeInternal.MAX_KEYS) return this.internalSplitInsert(node, key, page);
+            if (node.body.internal.num_keys >= TreeInternal.MAX_KEYS) return this.internalSplitInsert(node, key, page);
             const rchild = try this.pager.get(node.body.internal.right_child);
             const rchild_max_key = try this.getTreeMaxKey(rchild);
             if (key > rchild_max_key) {
@@ -296,22 +260,22 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         /// - `lnode`: The internal node.
         /// - `key`: The key of the new cell
         /// - `page`: The child of the new cell.
-        fn internalSplitInsert(this: *@This(), lnode: *Node, key: u64, page: u64) Error!void {
+        fn internalSplitInsert(this: *@This(), lnode: *TreeNode, key: u64, page: u64) Error!void {
             std.debug.assert(lnode.header.type == .Internal);
             const cell = lnode.body.internal.find(key);
             const lnode_max_key_old = try this.getTreeMaxKey(lnode);
             const rnode_page = this.pager.getFree();
             const rnode = try this.pager.get(rnode_page);
-            rnode.* = Node.init(lnode.header.parent, false, .Internal);
-            cellsSplitInsert(u64, &lnode.body.internal.cells, &rnode.body.internal.cells, NodeInternal.L_SPLIT_KEYS, cell, key, page);
-            lnode.body.internal.num_keys = NodeInternal.L_SPLIT_KEYS - 1;
-            rnode.body.internal.num_keys = NodeInternal.R_SPLIT_KEYS;
+            rnode.* = TreeNode.init(lnode.header.parent, false, .Internal);
+            cellsSplitInsert(u64, &lnode.body.internal.cells, &rnode.body.internal.cells, TreeInternal.L_SPLIT_KEYS, cell, key, page);
+            lnode.body.internal.num_keys = TreeInternal.L_SPLIT_KEYS - 1;
+            rnode.body.internal.num_keys = TreeInternal.R_SPLIT_KEYS;
             if (key > lnode_max_key_old) {
                 // The new key is larger the max key of the left node before the
                 // split. Thus, the inserted page becomes the right child of the
                 // right node, and the previous right child is now included in a
                 // cell whose key is the max key of the left node before the split.
-                const rnode_cell = cell % NodeInternal.L_SPLIT_KEYS;
+                const rnode_cell = cell % TreeInternal.L_SPLIT_KEYS;
                 rnode.body.internal.cells[rnode_cell].key = lnode_max_key_old;
                 rnode.body.internal.cells[rnode_cell].val = lnode.body.internal.right_child;
                 rnode.body.internal.right_child = page;
@@ -327,7 +291,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
             // right child for it. Later, the max key of the left node will be
             // added to the upper levels. As a result, the left child only contains
             // InternalNode.L_SPLIT_KEYS - 1 keys.
-            lnode.body.internal.right_child = lnode.body.internal.cells[NodeInternal.L_SPLIT_KEYS - 1].val;
+            lnode.body.internal.right_child = lnode.body.internal.cells[TreeInternal.L_SPLIT_KEYS - 1].val;
             // Update the parent pointers of the children of the right internal
             // node. At this point, all the children are pointing to the left node.
             try this.internalSetChildrenParent(rnode, rnode_page);
@@ -341,7 +305,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
             try this.internalInsert(parent, rchild_tree_max_key, rnode_page, lnode_max_key_old, lnode_max_key_new);
         }
 
-        fn internalSetChildrenParent(this: *@This(), node: *Node, parent: u64) Error!void {
+        fn internalSetChildrenParent(this: *@This(), node: *TreeNode, parent: u64) Error!void {
             std.debug.assert(node.header.type == .Internal);
             for (node.body.internal.cells[0..node.body.internal.num_keys]) |index| {
                 const child = try this.pager.get(index.val);
@@ -352,7 +316,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         }
 
         /// Get the max key value of the tree rooted at the given page.
-        fn getTreeMaxKey(this: *@This(), page: *Node) Error!u64 {
+        fn getTreeMaxKey(this: *@This(), page: *TreeNode) Error!u64 {
             switch (page.header.type) {
                 .Leaf => return page.body.leaf.cells[page.body.leaf.num_cells - 1].key,
                 .Internal => {
@@ -375,7 +339,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         /// - `value`: The value of the new cell.
         fn cellsInsert(
             comptime TCellValue: type,
-            cells: []squeal_pager.NodeCell(TCellValue),
+            cells: []NodeCell(TCellValue),
             cells_len: u64,
             new_cell: u64,
             key: u64,
@@ -405,8 +369,8 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
         /// - `value`: The value of the cell to insert.
         fn cellsSplitInsert(
             comptime TCellValue: type,
-            lcells: []squeal_pager.NodeCell(TCellValue),
-            rcells: []squeal_pager.NodeCell(TCellValue),
+            lcells: []NodeCell(TCellValue),
+            rcells: []NodeCell(TCellValue),
             split_at: u64,
             cell: u64,
             key: u64,
@@ -416,7 +380,7 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
             while (idx > 0) : (idx -= 1) {
                 const old_cell = idx - 1;
                 const new_cell = old_cell % split_at;
-                var cells: []squeal_pager.NodeCell(TCellValue) = undefined;
+                var cells: []NodeCell(TCellValue) = undefined;
                 if (old_cell >= split_at) cells = rcells else cells = lcells;
                 if (old_cell < cell) {
                     // Cells come before the insertion point are copied as is
@@ -432,4 +396,180 @@ pub fn Table(comptime T: type, comptime PZ: u64, comptime PN: u64) type {
             }
         }
     };
+}
+
+/// A row in the data table.
+pub const Row = extern struct {
+    id: u64,
+    key_len: u8,
+    val_len: u8,
+    key_buf: [MAX_KEY_LEN]u8,
+    val_buf: [MAX_VAL_LEN]u8,
+
+    /// Max length of a key.
+    pub const MAX_KEY_LEN = (1 << 8) - 1;
+    /// Max length of a value.
+    pub const MAX_VAL_LEN = (1 << 8) - 1;
+
+    /// Row's error.
+    pub const Error = error{ KeyTooLong, ValueTooLong };
+
+    /// Create a new row.
+    pub fn new(id: u64, key: []const u8, val: []const u8) Error!@This() {
+        if (key.len > MAX_KEY_LEN) return Error.KeyTooLong;
+        if (val.len > MAX_VAL_LEN) return Error.ValueTooLong;
+        var key_buf: [MAX_KEY_LEN]u8 = undefined;
+        var val_buf: [MAX_VAL_LEN]u8 = undefined;
+        std.mem.copy(u8, &key_buf, key);
+        std.mem.copy(u8, &val_buf, val);
+        return .{
+            .id = id,
+            .key_len = @intCast(key.len),
+            .val_len = @intCast(val.len),
+            .key_buf = key_buf,
+            .val_buf = val_buf,
+        };
+    }
+};
+
+/// A node within a B+ tree, which can be one of two types:
+/// + Leaf node containing data entries and their keys.
+/// + Internal node containing key indices and pointers to child node.
+pub fn Node(comptime T: type, comptime PAGE_SIZE: usize) type {
+    return extern struct {
+        header: NodeHeader,
+        body: NodeBody(T, PAGE_SIZE),
+
+        /// Initialize a node.
+        pub fn init(parent: u64, is_root: bool, node_type: NodeType) @This() {
+            return .{
+                .header = NodeHeader.init(parent, is_root, node_type),
+                .body = NodeBody(T, PAGE_SIZE).init(node_type),
+            };
+        }
+    };
+}
+
+/// Type of a node in a B+ tree.
+pub const NodeType = enum(u8) {
+    Leaf,
+    Internal,
+};
+
+/// Header of a node in a B+ tree containing its metadata.
+pub const NodeHeader = extern struct {
+    parent: u64,
+    is_root: bool,
+    type: NodeType,
+
+    /// Initialize a node header.
+    pub fn init(parent: u64, is_root: bool, node_type: NodeType) @This() {
+        return .{ .parent = parent, .is_root = is_root, .type = node_type };
+    }
+};
+
+/// Body of a node in a B+ tree, which can be one of two types leaf or internal.
+/// The node type is determined explicitly by the header insteading of using
+/// Zig's tagged union.
+pub fn NodeBody(comptime T: type, comptime PAGE_SIZE: usize) type {
+    return extern union {
+        leaf: NodeLeaf(T, PAGE_SIZE),
+        internal: NodeInternal(PAGE_SIZE),
+
+        /// Initialize a node body.
+        pub fn init(node_type: NodeType) @This() {
+            switch (node_type) {
+                .Leaf => return .{ .leaf = NodeLeaf(T, PAGE_SIZE).init() },
+                .Internal => return .{ .internal = NodeInternal(PAGE_SIZE).init() },
+            }
+        }
+    };
+}
+
+/// Content of a leaf node in a B+ tree.
+pub fn NodeLeaf(comptime T: type, comptime PAGE_SIZE: usize) type {
+    return extern struct {
+        next_leaf: u64,
+        num_cells: u64,
+        cells: [MAX_CELLS]NodeCell(T),
+
+        /// Max number of data cells a leaf node can hold.
+        pub const MAX_CELLS = (PAGE_SIZE - @sizeOf(NodeHeader) - @sizeOf(u64) * 2) / @sizeOf(NodeCell(T));
+        /// Number of cells in the right leaf node after splitting.
+        pub const R_SPLIT_CELLS = (MAX_CELLS + 1) / 2;
+        /// Number of cells in the left leaf node after splitting.
+        pub const L_SPLIT_CELLS = (MAX_CELLS + 1) - R_SPLIT_CELLS;
+
+        /// Initialize a leaf node.
+        pub fn init() @This() {
+            return .{ .next_leaf = 0, .num_cells = 0, .cells = undefined };
+        }
+
+        /// Find the index of the cell with the given key using binary search.
+        /// If there's no cell with the given key, an index of where the cell
+        /// should be is returned.
+        pub fn find(this: *const @This(), key: u64) u64 {
+            return searchCells(T, this.cells[0..this.num_cells], key);
+        }
+    };
+}
+
+/// Content of an internal node in a B+ tree.
+pub fn NodeInternal(comptime PAGE_SIZE: usize) type {
+    return extern struct {
+        right_child: u64,
+        num_keys: u64,
+        cells: [MAX_KEYS]NodeCell(u64),
+
+        /// Max number of data cells an internal node can hold.
+        pub const MAX_KEYS = (PAGE_SIZE - @sizeOf(NodeHeader) - @sizeOf(u64) * 2) / @sizeOf(NodeCell(u64));
+        /// Number of cells in the right internal node after splitting.
+        pub const R_SPLIT_KEYS = (MAX_KEYS + 1) / 2;
+        /// Number of cells in the left internal node after splitting.
+        pub const L_SPLIT_KEYS = (MAX_KEYS + 1) - R_SPLIT_KEYS;
+
+        /// Initialize an internal node.
+        pub fn init() @This() {
+            return .{ .right_child = 0, .num_keys = 0, .cells = undefined };
+        }
+
+        /// Return the child node index at the given index.
+        pub fn getChild(this: *const @This(), index: u64) u64 {
+            if (index == this.num_keys) return this.right_child;
+            return this.cells[index].val;
+        }
+
+        /// Find the index of the cell with the given key using binary search.
+        /// If there's no cell with the given key, an index of where the cell
+        /// should be is returned.
+        pub fn find(this: *const @This(), key: u64) u64 {
+            return searchCells(u64, this.cells[0..this.num_keys], key);
+        }
+
+        /// Find the index at old_key and update its value to new_key.
+        pub fn updateKey(this: *@This(), old_key: u64, new_key: u64) void {
+            const index = this.find(old_key);
+            if (index < this.num_keys) this.cells[index].key = new_key;
+        }
+    };
+}
+
+/// A data cell within a node in a B+ tree.
+pub fn NodeCell(comptime T: type) type {
+    return extern struct {
+        key: u64,
+        val: T,
+    };
+}
+
+fn searchCells(comptime T: type, cells: []const NodeCell(T), key: u64) u64 {
+    var left: u64 = 0;
+    var right: u64 = cells.len;
+    while (left < right) {
+        const index = (left + right) / 2;
+        const cell = cells[index];
+        if (key == cell.key) return index;
+        if (key < cell.key) right = index else left = index + 1;
+    }
+    return left;
 }

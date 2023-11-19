@@ -7,6 +7,21 @@ const squeal_table = @import("table.zig");
 const Row = squeal_table.Row;
 const Table = squeal_table.Table(Row, 4096, 64);
 
+test "node size check" {
+    try testing.expect(@sizeOf(squeal_table.Node(u8, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_table.Node(u16, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_table.Node(u32, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_table.Node(u64, 4096)) <= 4096);
+
+    try testing.expect(@sizeOf(squeal_table.Node(i8, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_table.Node(i16, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_table.Node(i32, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_table.Node(i64, 4096)) <= 4096);
+
+    try testing.expect(@sizeOf(squeal_table.Node(f32, 4096)) <= 4096);
+    try testing.expect(@sizeOf(squeal_table.Node(f64, 4096)) <= 4096);
+}
+
 test "creating new row fails when key is too long" {
     const key: [Row.MAX_KEY_LEN + 1]u8 = undefined;
     const result = Row.new(0x0102BEEF, &key, "world");
@@ -53,7 +68,7 @@ test "table select should should returns all available rows" {
     defer table.deinit() catch unreachable;
 
     var i: u64 = 0;
-    while (i < Table.NodeLeaf.MAX_CELLS) : (i += 1) {
+    while (i < Table.TreeLeaf.MAX_CELLS) : (i += 1) {
         const row = try Row.new(i, "hello", "world");
         try table.insert(&row);
     }
