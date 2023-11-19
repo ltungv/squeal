@@ -25,6 +25,7 @@ test "table insert should update rows count" {
 
     var pager = try Table.Pager.init(testing.allocator, filepath);
     defer pager.deinit();
+
     var table = try Table.init(&pager);
     defer table.deinit() catch unreachable;
 
@@ -35,15 +36,9 @@ test "table insert should update rows count" {
         try Row.new(3, "hello_3", "world_3"),
         try Row.new(4, "hello_4", "world_4"),
     };
-    for (&rows) |*row| {
-        try table.insert(row);
-    }
-    var num_rows: u64 = 0;
-    var cursor = try table.head();
-    while (!cursor.end) {
-        num_rows += 1;
-        try cursor.advance();
-    }
+    for (&rows) |*row| try table.insert(row);
+
+    const num_rows = try table.count();
     try testing.expectEqual(rows.len, num_rows);
 }
 
@@ -53,6 +48,7 @@ test "table select should should returns all available rows" {
 
     var pager = try Table.Pager.init(testing.allocator, filepath);
     defer pager.deinit();
+
     var table = try Table.init(&pager);
     defer table.deinit() catch unreachable;
 
@@ -75,26 +71,29 @@ test "table select should should returns all available rows" {
 test "table persists between different runs" {
     const filepath = try squeal_tests.randomTemporaryFilePath(testing.allocator);
     defer testing.allocator.free(filepath);
+
     var expected: [255]Row = undefined;
-    for (&expected, 0..) |*row, row_num| {
-        row.* = try Row.new(row_num, "hello", "world");
+    for (&expected, 0..) |*row, row_num| row.* = try Row.new(row_num, "hello", "world");
+
+    {
+        var pager = try Table.Pager.init(testing.allocator, filepath);
+        defer pager.deinit();
+
+        var table = try Table.init(&pager);
+        defer table.deinit() catch unreachable;
+
+        for (&expected) |*row| try table.insert(row);
     }
     {
         var pager = try Table.Pager.init(testing.allocator, filepath);
         defer pager.deinit();
+
         var table = try Table.init(&pager);
         defer table.deinit() catch unreachable;
-        for (&expected) |*row| {
-            try table.insert(row);
-        }
-    }
-    {
-        var pager = try Table.Pager.init(testing.allocator, filepath);
-        defer pager.deinit();
-        var table = try Table.init(&pager);
-        defer table.deinit() catch unreachable;
+
         const rows = try table.select(testing.allocator);
         defer testing.allocator.free(rows);
+
         try testing.expectEqualSlices(Row, &expected, rows);
     }
 }
