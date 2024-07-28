@@ -26,7 +26,7 @@ fn buildExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
 
 fn buildUnitTest(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const exe = b.addTest(.{
-        .root_source_file = b.path("src/tests.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });

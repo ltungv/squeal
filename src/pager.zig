@@ -1,6 +1,10 @@
 const std = @import("std");
-const debug = std.debug;
 const squeal_lru = @import("lru.zig");
+const squeal_table = @import("table.zig");
+
+const TEST_PAGE_SIZE = 4096;
+const TestPage = squeal_table.Node(u64, TEST_PAGE_SIZE);
+const TestPager = Pager(TestPage, TEST_PAGE_SIZE, 64);
 
 /// A pager is responsible for reading and writing pages (blocks of data) to a file.
 /// Changes made on a page are not persisted until the page is flushed.
@@ -73,7 +77,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             if (page_num < this.len / PAGE_SIZE) {
                 var page_buf: [PAGE_SIZE]u8 = undefined;
                 const read_bytes = try this.file.preadAll(&page_buf, page_num * PAGE_SIZE);
-                debug.assert(read_bytes == PAGE_SIZE);
+                std.debug.assert(read_bytes == PAGE_SIZE);
                 var stream = std.io.fixedBufferStream(&page_buf);
                 var reader = stream.reader();
                 page.* = try reader.readStruct(T);
@@ -111,4 +115,33 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             this.len = @max(this.len, page_num * PAGE_SIZE + PAGE_SIZE);
         }
     };
+}
+
+test "page init" {
+    var pager = try TestPager.init(std.testing.allocator, "test.squeal");
+    defer pager.deinit();
+}
+
+test "page flush null page" {
+    var pager = try TestPager.init(std.testing.allocator, "test.squeal");
+    defer pager.deinit();
+
+    try std.testing.expectError(error.NullPage, pager.flush(0));
+}
+
+test "page flush persist page" {
+    {
+        var pager = try TestPager.init(std.testing.allocator, "./test.squeal");
+        defer pager.deinit();
+
+        var node = try pager.get(0);
+        node.header.parent = 420;
+        try pager.flush(0);
+    }
+
+    var pager = try TestPager.init(std.testing.allocator, "./test.squeal");
+    defer pager.deinit();
+
+    const node = try pager.get(0);
+    try std.testing.expectEqual(@as(u64, @intCast(420)), node.header.parent);
 }

@@ -1,5 +1,6 @@
 const std = @import("std");
-const debug = std.debug;
+
+const TestCache = AutoLruCache(u64, u64);
 
 /// An LRU cache backed by a hash map and a doubly-linked list. Two functions
 /// `hash` and `eql` are automatically generated for the key type so it can be
@@ -81,4 +82,47 @@ pub fn AutoLruCache(comptime K: type, comptime V: type) type {
             return null;
         }
     };
+}
+
+test "lru cache get and set" {
+    var cache = TestCache.init(std.testing.allocator, 3);
+    defer cache.deinit();
+    // set new
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(0, 69));
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(1, 420));
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(2, 666));
+    // asserts
+    try std.testing.expectEqual(@as(?u64, 69), cache.get(0));
+    try std.testing.expectEqual(@as(?u64, 420), cache.get(1));
+    try std.testing.expectEqual(@as(?u64, 666), cache.get(2));
+    // overwriting values
+    try std.testing.expectEqual(@as(?u64, 69), try cache.set(0, 420));
+    try std.testing.expectEqual(@as(?u64, 420), try cache.set(1, 666));
+    try std.testing.expectEqual(@as(?u64, 666), try cache.set(2, 69));
+
+    // asserts
+    try std.testing.expectEqual(@as(?u64, 420), cache.get(0));
+    try std.testing.expectEqual(@as(?u64, 666), cache.get(1));
+    try std.testing.expectEqual(@as(?u64, 69), cache.get(2));
+}
+
+test "lru cache invalidation order" {
+    var cache = TestCache.init(std.testing.allocator, 3);
+    defer cache.deinit();
+    // set new
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(0, 69));
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(1, 420));
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(2, 666));
+    // invalidating values
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(3, 777));
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(4, 777));
+    try std.testing.expectEqual(@as(?u64, null), try cache.set(5, 777));
+    // asserts
+    try std.testing.expectEqual(@as(?TestCache.Entry, .{ .key = 0, .value = 69 }), try cache.invalidate());
+    try std.testing.expectEqual(@as(?TestCache.Entry, .{ .key = 1, .value = 420 }), try cache.invalidate());
+    try std.testing.expectEqual(@as(?TestCache.Entry, .{ .key = 2, .value = 666 }), try cache.invalidate());
+    try std.testing.expectEqual(@as(?u64, null), cache.get(2));
+    try std.testing.expectEqual(@as(?u64, 777), cache.get(3));
+    try std.testing.expectEqual(@as(?u64, 777), cache.get(4));
+    try std.testing.expectEqual(@as(?u64, 777), cache.get(5));
 }

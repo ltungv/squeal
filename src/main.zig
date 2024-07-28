@@ -7,7 +7,7 @@ pub fn main() !void {
 
     var istream = std.io.StreamSource{ .file = std.io.getStdIn() };
     var ostream = std.io.StreamSource{ .file = std.io.getStdOut() };
-    const stream = squeal_vm.Stream.new(&istream, &ostream);
+    const stream = squeal_vm.Stream{ .reader = istream.reader(), .writer = ostream.writer() };
 
     var pager = try squeal_vm.Table.Pager.init(gpa.allocator(), "./db.squeal");
     defer pager.deinit();
@@ -19,4 +19,8 @@ pub fn main() !void {
 
     var vm = try squeal_vm.Vm.init(gpa.allocator(), &stream, &table);
     try vm.run();
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

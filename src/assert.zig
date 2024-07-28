@@ -1,14 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
-const squeal_table = @import("table.zig");
 const squeal_vm = @import("vm.zig");
-
-comptime {
-    _ = @import("lru_test.zig");
-    _ = @import("pager_test.zig");
-    _ = @import("table_test.zig");
-    _ = @import("vm_test.zig");
-}
 
 pub fn randomTemporaryFilePath(allocator: std.mem.Allocator) ![]u8 {
     const tmpdir = std.testing.tmpDir(.{});
@@ -31,7 +23,7 @@ pub fn expectVmOutputGivenInput(allocator: std.mem.Allocator, path: []const u8, 
 
     var istream = std.io.StreamSource{ .const_buffer = std.io.fixedBufferStream(input) };
     var ostream = std.io.StreamSource{ .buffer = std.io.fixedBufferStream(output) };
-    const stream = squeal_vm.Stream.new(&istream, &ostream);
+    const stream = squeal_vm.Stream{ .reader = istream.reader(), .writer = ostream.writer() };
 
     var pager = try squeal_vm.Table.Pager.init(allocator, path);
     defer pager.deinit();

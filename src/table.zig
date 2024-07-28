@@ -1,5 +1,8 @@
 const std = @import("std");
+const squeal_assert = @import("assert.zig");
 const squeal_pager = @import("pager.zig");
+
+const TestTable = Table(Row, 4096, 64);
 
 /// A table is a collection of persistent rows stored in a B+ tree structure
 /// for fast lookups. Rows are stored in pages, which are managed by a pager
@@ -572,4 +575,110 @@ fn searchCells(comptime T: type, cells: []const NodeCell(T), key: u64) u64 {
         if (key < cell.key) right = index else left = index + 1;
     }
     return left;
+}
+
+test "node size check" {
+    try std.testing.expect(@sizeOf(Node(u8, 4096)) <= 4096);
+    try std.testing.expect(@sizeOf(Node(u16, 4096)) <= 4096);
+    try std.testing.expect(@sizeOf(Node(u32, 4096)) <= 4096);
+    try std.testing.expect(@sizeOf(Node(u64, 4096)) <= 4096);
+
+    try std.testing.expect(@sizeOf(Node(i8, 4096)) <= 4096);
+    try std.testing.expect(@sizeOf(Node(i16, 4096)) <= 4096);
+    try std.testing.expect(@sizeOf(Node(i32, 4096)) <= 4096);
+    try std.testing.expect(@sizeOf(Node(i64, 4096)) <= 4096);
+
+    try std.testing.expect(@sizeOf(Node(f32, 4096)) <= 4096);
+    try std.testing.expect(@sizeOf(Node(f64, 4096)) <= 4096);
+}
+
+test "creating new row fails when key is too long" {
+    const key: [Row.MAX_KEY_LEN + 1]u8 = undefined;
+    const result = Row.new(0x0102BEEF, &key, "world");
+    try std.testing.expectError(Row.Error.KeyTooLong, result);
+}
+
+test "creating new row fails when value is too long" {
+    const val: [Row.MAX_VAL_LEN + 1]u8 = undefined;
+    const result = Row.new(0x0102BEEF, "hello", &val);
+    try std.testing.expectError(Row.Error.ValueTooLong, result);
+}
+
+test "table insert should update rows count" {
+    const filepath = try squeal_assert.randomTemporaryFilePath(std.testing.allocator);
+    defer std.testing.allocator.free(filepath);
+
+    var pager = try TestTable.Pager.init(std.testing.allocator, filepath);
+    defer pager.deinit();
+
+    var table = try TestTable.init(&pager);
+    defer table.deinit() catch unreachable;
+
+    const rows = [_]Row{
+        try Row.new(0, "hello_0", "world_0"),
+        try Row.new(1, "hello_1", "world_1"),
+        try Row.new(2, "hello_2", "world_2"),
+        try Row.new(3, "hello_3", "world_3"),
+        try Row.new(4, "hello_4", "world_4"),
+    };
+    for (&rows) |*row| try table.insert(row);
+
+    const num_rows = try table.count();
+    try std.testing.expectEqual(rows.len, num_rows);
+}
+
+test "table select should should returns all available rows" {
+    const filepath = try squeal_assert.randomTemporaryFilePath(std.testing.allocator);
+    defer std.testing.allocator.free(filepath);
+
+    var pager = try TestTable.Pager.init(std.testing.allocator, filepath);
+    defer pager.deinit();
+
+    var table = try TestTable.init(&pager);
+    defer table.deinit() catch unreachable;
+
+    var i: u64 = 0;
+    while (i < TestTable.TreeLeaf.MAX_CELLS) : (i += 1) {
+        const row = try Row.new(i, "hello", "world");
+        try table.insert(&row);
+    }
+
+    const rows = try table.select(std.testing.allocator);
+    defer std.testing.allocator.free(rows);
+
+    for (rows, 0..) |row, row_num| {
+        try std.testing.expectEqual(@as(u64, @intCast(row_num)), row.id);
+        try std.testing.expectEqualStrings("hello", row.key_buf[0..row.key_len]);
+        try std.testing.expectEqualStrings("world", row.val_buf[0..row.val_len]);
+    }
+}
+
+test "table persists between different runs" {
+    const filepath = try squeal_assert.randomTemporaryFilePath(std.testing.allocator);
+    defer std.testing.allocator.free(filepath);
+
+    var expected: [255]Row = undefined;
+    for (&expected, 0..) |*row, row_num| row.* = try Row.new(row_num, "hello", "world");
+
+    {
+        var pager = try TestTable.Pager.init(std.testing.allocator, filepath);
+        defer pager.deinit();
+
+        var table = try TestTable.init(&pager);
+        defer table.deinit() catch unreachable;
+
+        for (&expected) |*row| try table.insert(row);
+    }
+    {
+        var pager = try TestTable.Pager.init(std.testing.allocator, filepath);
+        defer pager.deinit();
+
+        var table = try TestTable.init(&pager);
+        defer table.deinit() catch unreachable;
+
+        const rows = try table.select(std.testing.allocator);
+        defer std.testing.allocator.free(rows);
+
+        try std.testing.expectEqualSlices(Row, &expected, rows);
+    }
 }
