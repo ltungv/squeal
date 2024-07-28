@@ -1,6 +1,6 @@
 *.squeal
 
-zig-cache/
+.zig-cache/
 zig-out/
 /release/
 /debug/

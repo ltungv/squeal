@@ -18,10 +18,10 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         /// Error that occurs when using a pager.
         pub const Error = error{ Corrupted, EndOfStream, FileSystem, NotSupported, NullPage, OutOfBound } ||
             std.fs.File.OpenError ||
+            std.fs.File.PReadError ||
+            std.fs.File.PWriteError ||
             std.mem.Allocator.Error ||
-            std.os.GetCwdError ||
-            std.os.PReadError ||
-            std.os.PWriteError;
+            std.process.GetCwdError;
 
         /// Create a new pager backed by the given allocator and file.
         pub fn init(allocator: std.mem.Allocator, path: []const u8) Error!@This() {
@@ -69,7 +69,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
             if (page_num >= PAGE_COUNT) return Error.OutOfBound;
             if (this.page_cache.get(page_num)) |page| return page;
             // Cache miss, load page from disk if it exists.
-            var page = try this.allocator.create(T);
+            const page = try this.allocator.create(T);
             if (page_num < this.len / PAGE_SIZE) {
                 var page_buf: [PAGE_SIZE]u8 = undefined;
                 const read_bytes = try this.file.preadAll(&page_buf, page_num * PAGE_SIZE);

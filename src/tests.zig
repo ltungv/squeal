@@ -26,7 +26,7 @@ pub fn randomTemporaryFilePath(allocator: std.mem.Allocator) ![]u8 {
 }
 
 pub fn expectVmOutputGivenInput(allocator: std.mem.Allocator, path: []const u8, expected: []const u8, input: []const u8) !void {
-    var output = try allocator.alloc(u8, expected.len);
+    const output = try allocator.alloc(u8, expected.len);
     defer allocator.free(output);
 
     var istream = std.io.StreamSource{ .const_buffer = std.io.fixedBufferStream(input) };

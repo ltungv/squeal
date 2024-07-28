@@ -56,7 +56,7 @@ pub fn Table(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
 
             /// Insert a row into the leaf node.
             pub fn insert(this: *@This(), key: u64, val: *const T) Error!void {
-                var page = try this.table.pager.get(this.page);
+                const page = try this.table.pager.get(this.page);
                 try this.table.leafInsert(page, this.cell, key, val);
             }
         };
@@ -64,7 +64,7 @@ pub fn Table(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         /// Initialize a new table backed by the given pager.
         pub fn init(pager: *Pager) Error!@This() {
             if (pager.page_count == 0) {
-                var root = try pager.get(0);
+                const root = try pager.get(0);
                 root.* = TreeNode.init(0, true, .Leaf);
             }
             return .{ .pager = pager, .root_page = 0 };
@@ -77,7 +77,7 @@ pub fn Table(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
 
         /// Count the number of row currently in the table.
         pub fn count(this: *@This()) Error!u64 {
-            var cursor = try this.head();
+            const cursor = try this.head();
             var page = try this.pager.get(cursor.page);
             var rowCount = page.body.leaf.num_cells;
             while (page.body.leaf.next_leaf != 0) {
@@ -420,8 +420,8 @@ pub const Row = extern struct {
         if (val.len > MAX_VAL_LEN) return Error.ValueTooLong;
         var key_buf: [MAX_KEY_LEN]u8 = undefined;
         var val_buf: [MAX_VAL_LEN]u8 = undefined;
-        std.mem.copy(u8, &key_buf, key);
-        std.mem.copy(u8, &val_buf, val);
+        @memcpy(key_buf[0..key.len], key);
+        @memcpy(val_buf[0..val.len], val);
         return .{
             .id = id,
             .key_len = @intCast(key.len),

@@ -1,16 +1,16 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     buildExecutable(b, target, optimize);
     buildUnitTest(b, target, optimize);
 }
 
-fn buildExecutable(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std.builtin.Mode) void {
+fn buildExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const exe = b.addExecutable(.{
         .name = "squeal",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -24,9 +24,9 @@ fn buildExecutable(b: *std.build.Builder, target: std.zig.CrossTarget, optimize:
     step.dependOn(&cmd.step);
 }
 
-fn buildUnitTest(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std.builtin.Mode) void {
+fn buildUnitTest(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const exe = b.addTest(.{
-        .root_source_file = .{ .path = "src/tests.zig" },
+        .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
     });

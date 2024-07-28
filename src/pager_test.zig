@@ -32,6 +32,6 @@ test "page flush persist page" {
     var pager = try TestPager.init(testing.allocator, "./test.squeal");
     defer pager.deinit();
 
-    var node = try pager.get(0);
+    const node = try pager.get(0);
     try testing.expectEqual(@as(u64, @intCast(420)), node.header.parent);
 }
