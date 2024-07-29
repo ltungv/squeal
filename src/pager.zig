@@ -15,9 +15,9 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         len: u64,
         file: std.fs.File,
         page_count: u64,
-        page_cache: Cache,
+        page_cache: LruCache,
 
-        const Cache = squeal_lru.AutoLruCache(u64, *T);
+        const LruCache = squeal_lru.AutoLruCache(u64, *T);
 
         /// Error that occurs when using a pager.
         pub const Error = error{ Corrupted, EndOfStream, FileSystem, NotSupported, NullPage, OutOfBound } ||
@@ -42,7 +42,7 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
                 .len = file_stat.size,
                 .file = file,
                 .page_count = file_stat.size / PAGE_SIZE,
-                .page_cache = Cache.init(allocator, 128),
+                .page_cache = LruCache.init(allocator, 128),
             };
         }
 
@@ -94,15 +94,6 @@ pub fn Pager(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         /// Get a free page.
         pub fn getFree(this: *const @This()) u64 {
             return this.page_count;
-        }
-
-        /// Clean up the pager by finding all cached pages that will be evicted
-        /// and flush them to disk.
-        pub fn clean(this: *@This()) Error!void {
-            while (try this.page_cache.invalidate()) |invalidated| {
-                try this.writePage(invalidated.key, invalidated.value);
-                this.allocator.destroy(invalidated.value);
-            }
         }
 
         /// Write a whole page to disk at the correct offset based on the page number.

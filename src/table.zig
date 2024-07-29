@@ -93,7 +93,6 @@ pub fn Table(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         /// Find all rows from the table and return an owned slice containing
         /// their data.
         pub fn select(this: *@This(), allocator: std.mem.Allocator) Error![]T {
-            try this.pager.clean();
             var rows = std.ArrayList(T).init(allocator);
             var cursor = try this.head();
             while (!cursor.end) {
@@ -107,7 +106,6 @@ pub fn Table(comptime T: type, comptime PAGE_SIZE: u64, comptime PAGE_COUNT: u64
         /// Insert a new row into the table. Changes are not persisted until the
         /// page is flushed.
         pub fn insert(this: *@This(), row: *const T) Error!void {
-            try this.pager.clean();
             var cursor = try this.find(this.root_page, row.id);
             const page = try this.pager.get(cursor.page);
             if (cursor.cell < page.body.leaf.num_cells and
