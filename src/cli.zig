@@ -2,9 +2,6 @@ const std = @import("std");
 const assert = @import("assert.zig");
 const squeal = @import("squeal.zig");
 
-const PAGE_SIZE = 32 * 1024;
-const PAGE_COUNT = 1024 * 1024;
-
 /// The tokenizer for our Squeal.
 const Tokenizer = struct {
     src: []const u8,
@@ -311,7 +308,7 @@ pub const Vm = struct {
         while (!finished) {
             try this.stream.print("db > ");
 
-            var line_buf: [PAGE_SIZE]u8 = undefined;
+            var line_buf: [4096]u8 = undefined;
             const line = this.stream.readln(&line_buf) catch |err| {
                 try this.stream.eprint(err);
                 continue;
