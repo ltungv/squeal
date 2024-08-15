@@ -397,18 +397,28 @@ pub const Vm = struct {
             },
             squeal.INNER_NODE_TYPE => {
                 const cell_count = squeal.getInnerCellCount(node);
+                const right_ptr = squeal.getInnerRightPointer(node);
                 try this.printIndentation(indentation);
                 try this.stream.printf("- internal (size {d})\n", .{cell_count});
+
+                var keys = try std.ArrayList(u64).initCapacity(this.allocator, cell_count);
+                defer keys.deinit();
+
+                var ptrs = try std.ArrayList(u32).initCapacity(this.allocator, cell_count);
+                defer ptrs.deinit();
+
                 var cell: u32 = 0;
                 while (cell < cell_count) : (cell += 1) {
-                    const cell_key = squeal.getInnerCellKey(node, cell);
-                    const cell_ptr = squeal.getInnerCellPointer(node, cell);
-                    try this.printTree(cell_ptr, indentation + 1);
-                    try this.printIndentation(indentation + 1);
-                    try this.stream.printf("- key {d}\n", .{cell_key});
+                    try keys.append(squeal.getInnerCellKey(node, cell));
+                    try ptrs.append(squeal.getInnerCellPointer(node, cell));
                 }
-                const cell_ptr = squeal.getInnerRightPointer(node);
-                try this.printTree(cell_ptr, indentation + 1);
+
+                for (keys.items, ptrs.items) |key, ptr| {
+                    try this.printTree(ptr, indentation + 1);
+                    try this.printIndentation(indentation + 1);
+                    try this.stream.printf("- key {d}\n", .{key});
+                }
+                try this.printTree(right_ptr, indentation + 1);
             },
             else => return Error.Corrupted,
         }
