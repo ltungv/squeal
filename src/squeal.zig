@@ -1,7 +1,5 @@
 const std = @import("std");
-const squeal_assert = @import("assert.zig");
-const squeal_lru = @import("lru.zig");
-const squeal_table = @import("table.zig");
+const assert = @import("assert.zig");
 
 fn LruCache(comptime K: type, comptime V: type) type {
     return struct {
@@ -122,7 +120,7 @@ const Pager = struct {
         this.file.close();
     }
 
-    fn get(this: *Pager, id: u32) Error![]u8 {
+    pub fn get(this: *Pager, id: u32) Error![]u8 {
         if (this.cache.get(id)) |page| {
             return page;
         }
@@ -173,8 +171,8 @@ const Pager = struct {
 };
 
 // Node types
-const LEAF_NODE_TYPE = 0;
-const INNER_NODE_TYPE = 1;
+pub const LEAF_NODE_TYPE = 0;
+pub const INNER_NODE_TYPE = 1;
 
 // Common header
 const NODE_TYPE_OFFSET = 0;
@@ -199,7 +197,7 @@ const INNER_NODE_HEADER_SIZE = NODE_HEADER_SIZE + INNER_NODE_RIGHT_POINTER_SIZE 
 const CELL_KEY_SIZE = @sizeOf(u64);
 const CELL_POINTER_SIZE = @sizeOf(u32);
 
-fn getNodeType(node: []const u8) u8 {
+pub fn getNodeType(node: []const u8) u8 {
     return node[NODE_TYPE_OFFSET];
 }
 
@@ -219,7 +217,7 @@ fn setLeafRightPointer(node: []u8, ptr: u32) void {
     return std.mem.writeInt(u32, buf, ptr, .little);
 }
 
-fn getLeafCellCount(node: []const u8) u32 {
+pub fn getLeafCellCount(node: []const u8) u32 {
     std.debug.assert(getNodeType(node) == LEAF_NODE_TYPE);
     const buf = node[LEAF_NODE_CELL_COUNT_OFFSET .. LEAF_NODE_CELL_COUNT_OFFSET + LEAF_NODE_CELL_COUNT_SIZE];
     return std.mem.readInt(u32, buf, .little);
@@ -231,7 +229,7 @@ fn setLeafCellCount(node: []u8, count: u32) void {
     std.mem.writeInt(u32, buf, count, .little);
 }
 
-fn getLeafCellKey(node: []const u8, cell_size: usize, id: u32) u64 {
+pub fn getLeafCellKey(node: []const u8, cell_size: usize, id: u32) u64 {
     std.debug.assert(getNodeType(node) == LEAF_NODE_TYPE);
     const cell_offset = LEAF_NODE_HEADER_SIZE + cell_size * id;
     const cell = node[cell_offset .. cell_offset + cell_size];
@@ -284,7 +282,7 @@ fn findLeaf(node: []const u8, cell_size: usize, key: u64) u32 {
     return base;
 }
 
-fn getInnerRightPointer(node: []const u8) u32 {
+pub fn getInnerRightPointer(node: []const u8) u32 {
     std.debug.assert(getNodeType(node) == INNER_NODE_TYPE);
     const buf = node[INNER_NODE_RIGHT_POINTER_OFFSET .. INNER_NODE_RIGHT_POINTER_OFFSET + INNER_NODE_RIGHT_POINTER_SIZE];
     return std.mem.readInt(u32, buf, .little);
@@ -296,7 +294,7 @@ fn setInnerRightPointer(node: []u8, ptr: u32) void {
     return std.mem.writeInt(u32, buf, ptr, .little);
 }
 
-fn getInnerCellCount(node: []const u8) u32 {
+pub fn getInnerCellCount(node: []const u8) u32 {
     std.debug.assert(getNodeType(node) == INNER_NODE_TYPE);
     const buf = node[INNER_NODE_CELL_COUNT_OFFSET .. INNER_NODE_CELL_COUNT_OFFSET + INNER_NODE_CELL_COUNT_SIZE];
     return std.mem.readInt(u32, buf, .little);
@@ -308,7 +306,7 @@ fn setInnerCellCount(node: []u8, count: u32) void {
     std.mem.writeInt(u32, buf, count, .little);
 }
 
-fn getInnerCellKey(node: []const u8, id: u32) u64 {
+pub fn getInnerCellKey(node: []const u8, id: u32) u64 {
     std.debug.assert(getNodeType(node) == INNER_NODE_TYPE);
     const cell_size = CELL_KEY_SIZE + CELL_POINTER_SIZE;
     const cell_offset = INNER_NODE_HEADER_SIZE + cell_size * id;
@@ -326,7 +324,7 @@ fn setInnerCellKey(node: []u8, id: u32, key: u64) void {
     std.mem.writeInt(u64, buf, key, .little);
 }
 
-fn getInnerCellPointer(node: []const u8, id: u32) u32 {
+pub fn getInnerCellPointer(node: []const u8, id: u32) u32 {
     std.debug.assert(getNodeType(node) == INNER_NODE_TYPE);
     const cell_size = CELL_KEY_SIZE + CELL_POINTER_SIZE;
     const cell_offset = INNER_NODE_HEADER_SIZE + cell_size * id;
@@ -363,7 +361,7 @@ fn findInner(node: []const u8, key: u64) u32 {
     return base;
 }
 
-const Table = struct {
+pub const Table = struct {
     allocator: std.mem.Allocator,
     pager: Pager,
     height: usize,
@@ -372,9 +370,9 @@ const Table = struct {
     max_leaf_cells: u32,
     max_inner_cells: u32,
 
-    const Error = error{DuplicateKey} || Pager.Error;
+    pub const Error = error{DuplicateKey} || Pager.Error;
 
-    fn init(allocator: std.mem.Allocator, path: []const u8, leaf_value_size: usize, page_size: usize, page_count: usize) Error!@This() {
+    pub fn init(allocator: std.mem.Allocator, path: []const u8, leaf_value_size: usize, page_size: usize, page_count: usize) Error!@This() {
         const leaf_cell_size = CELL_KEY_SIZE + leaf_value_size;
         const max_leaf_cells = (page_size - LEAF_NODE_HEADER_SIZE) / leaf_cell_size;
         const max_inner_cells = (page_size - INNER_NODE_HEADER_SIZE) / (CELL_KEY_SIZE + CELL_POINTER_SIZE);
@@ -393,11 +391,38 @@ const Table = struct {
         };
     }
 
-    fn deinit(this: *@This()) void {
+    pub fn deinit(this: *@This()) Error!void {
+        try this.pager.flushAll();
         this.pager.deinit();
     }
 
-    fn find(this: *@This(), page: u32, key: u64) Error!Cursor {
+    pub fn count(this: *@This()) Error!usize {
+        const cursor = try this.find(0, 0);
+        var page = cursor.page;
+        var cell_count: usize = 0;
+        while (true) {
+            const node = try this.pager.get(page);
+            cell_count += getLeafCellCount(node);
+            page = getLeafRightPointer(node);
+            if (page == 0) {
+                break;
+            }
+        }
+        return cell_count;
+    }
+
+    pub fn insert(this: *@This(), key: u64, value: []const u8) Error!void {
+        var ancestors = try std.ArrayList(u32).initCapacity(this.allocator, this.height);
+        defer ancestors.deinit();
+        const cursor = try this.findWithAncestors(0, key, &ancestors);
+        const node = try this.pager.get(cursor.page);
+        if (!cursor.done and key == getLeafCellKey(node, this.leaf_cell_size, cursor.cell)) {
+            return Error.DuplicateKey;
+        }
+        try this.insertLeaf(node, cursor.cell, key, value, ancestors.items[0..ancestors.items.len]);
+    }
+
+    pub fn find(this: *@This(), page: u32, key: u64) Error!Cursor {
         const node = try this.pager.get(page);
         switch (getNodeType(node)) {
             LEAF_NODE_TYPE => {
@@ -446,17 +471,6 @@ const Table = struct {
         }
     }
 
-    fn insert(this: *@This(), key: u64, value: []const u8) Error!void {
-        var ancestors = try std.ArrayList(u32).initCapacity(this.allocator, this.height);
-        defer ancestors.deinit();
-        const cursor = try this.findWithAncestors(0, key, &ancestors);
-        const node = try this.pager.get(cursor.page);
-        if (!cursor.done and key == getLeafCellKey(node, this.leaf_cell_size, cursor.cell)) {
-            return Error.DuplicateKey;
-        }
-        try this.insertLeaf(node, cursor.cell, key, value, ancestors.items[0..ancestors.items.len]);
-    }
-
     fn createRoot(this: *@This(), root: []u8, key: u64, rpage: u32, rnode: []u8) Error!void {
         const lpage = this.pager.getFreePage();
         const lnode = try this.pager.get(lpage);
@@ -484,8 +498,8 @@ const Table = struct {
         const tail_offset = LEAF_NODE_HEADER_SIZE + this.leaf_cell_size * cell_count;
         std.mem.copyBackwards(
             u8,
-            node[head_offset..tail_offset],
             node[head_offset + this.leaf_cell_size .. tail_offset + this.leaf_cell_size],
+            node[head_offset..tail_offset],
         );
 
         setLeafCellKey(node, this.leaf_cell_size, cell, key);
@@ -566,8 +580,8 @@ const Table = struct {
             const tail_offset = INNER_NODE_HEADER_SIZE + (CELL_KEY_SIZE + CELL_POINTER_SIZE) * cell_count;
             std.mem.copyBackwards(
                 u8,
+                node[head_offset + CELL_KEY_SIZE + CELL_POINTER_SIZE .. tail_offset + CELL_KEY_SIZE + CELL_POINTER_SIZE],
                 node[head_offset..tail_offset],
-                node[head_offset + this.leaf_cell_size .. tail_offset + this.leaf_cell_size],
             );
             setInnerCellKey(node, cell, key);
             setInnerCellPointer(node, cell, page);
@@ -619,7 +633,7 @@ const Table = struct {
         } else {
             setInnerRightPointer(rnode, getInnerRightPointer(lnode));
         }
-        setInnerRightPointer(lnode, rpage);
+        setInnerRightPointer(lnode, getInnerCellPointer(lnode, splitted_lnode_cell_count - 1));
 
         const lnode_new_max_key = try this.findTreeMaxKey(lnode);
         if (ancestors.len == 0) {
@@ -654,12 +668,12 @@ const Cursor = struct {
     cell: u32,
     done: bool,
 
-    fn value(this: *const @This()) Table.Error![]const u8 {
+    pub fn value(this: *const @This()) Table.Error![]const u8 {
         const node = try this.table.pager.get(this.page);
         return getLeafCellValue(node, this.table.leaf_value_size, this.cell);
     }
 
-    fn advance(this: *@This()) Table.Error!void {
+    pub fn advance(this: *@This()) Table.Error!void {
         const node = try this.table.pager.get(this.page);
         const cell_count = getLeafCellCount(node);
         this.cell += 1;
@@ -668,6 +682,40 @@ const Cursor = struct {
             this.cell = 0;
             this.done = this.page == 0;
         }
+    }
+};
+
+/// A row in the data table.
+pub const Row = extern struct {
+    id: u64,
+    key_len: u8,
+    val_len: u8,
+    key_buf: [MAX_KEY_LEN]u8,
+    val_buf: [MAX_VAL_LEN]u8,
+
+    /// Max length of a key.
+    pub const MAX_KEY_LEN = (1 << 8) - 1;
+    /// Max length of a value.
+    pub const MAX_VAL_LEN = (1 << 8) - 1;
+
+    /// Row's error.
+    pub const Error = error{ KeyTooLong, ValueTooLong };
+
+    /// Create a new row.
+    pub fn new(id: u64, key: []const u8, val: []const u8) Error!@This() {
+        if (key.len > MAX_KEY_LEN) return Error.KeyTooLong;
+        if (val.len > MAX_VAL_LEN) return Error.ValueTooLong;
+        var key_buf: [MAX_KEY_LEN]u8 = undefined;
+        var val_buf: [MAX_VAL_LEN]u8 = undefined;
+        @memcpy(key_buf[0..key.len], key);
+        @memcpy(val_buf[0..val.len], val);
+        return .{
+            .id = id,
+            .key_len = @intCast(key.len),
+            .val_len = @intCast(val.len),
+            .key_buf = key_buf,
+            .val_buf = val_buf,
+        };
     }
 };
 
@@ -761,7 +809,7 @@ test "LruCache.set returns invalidated entry on adding to a full cache" {
 }
 
 test "Pager.get returns a new page given new id" {
-    const fpath = try squeal_assert.randomTemporaryFilePath(std.testing.allocator);
+    const fpath = try assert.randomTemporaryFilePath(std.testing.allocator);
     defer std.testing.allocator.free(fpath);
 
     var pager = try Pager.init(std.testing.allocator, fpath, 4096, 64);
@@ -784,7 +832,7 @@ test "Pager.flushAll writes all cached pages to disk" {
     const test_state = try PagerTestState.init(std.testing.allocator, 4096, 64);
     defer test_state.deinit();
 
-    const fpath = try squeal_assert.randomTemporaryFilePath(std.testing.allocator);
+    const fpath = try assert.randomTemporaryFilePath(std.testing.allocator);
     defer std.testing.allocator.free(fpath);
 
     {
@@ -814,7 +862,7 @@ test "Pager.set writes invalidated pages to disk" {
     const test_state = try PagerTestState.init(std.testing.allocator, 4096, 64);
     defer test_state.deinit();
 
-    const fpath = try squeal_assert.randomTemporaryFilePath(std.testing.allocator);
+    const fpath = try assert.randomTemporaryFilePath(std.testing.allocator);
     defer std.testing.allocator.free(fpath);
 
     {
@@ -841,11 +889,11 @@ test "Pager.set writes invalidated pages to disk" {
 }
 
 test "Table.find returns entries added by Table.insert" {
-    const fpath = try squeal_assert.randomTemporaryFilePath(std.testing.allocator);
+    const fpath = try assert.randomTemporaryFilePath(std.testing.allocator);
     defer std.testing.allocator.free(fpath);
 
     var table = try Table.init(std.testing.allocator, fpath, 256, 1024, 512);
-    defer table.deinit();
+    defer table.deinit() catch unreachable;
 
     var test_state = try TableTestState.init(std.testing.allocator, 10000, 256);
     defer test_state.deinit();
@@ -853,6 +901,32 @@ test "Table.find returns entries added by Table.insert" {
     for (0.., test_state.entries) |id, entry| {
         try table.insert(id, entry);
     }
+    try std.testing.expectEqual(test_state.entries.len, table.count());
+
+    var cursor = try table.find(0, 0);
+    for (test_state.entries) |entry| {
+        try std.testing.expect(!cursor.done);
+        const inserted_entry = try cursor.value();
+        try std.testing.expectEqualSlices(u8, entry, inserted_entry);
+        try cursor.advance();
+    }
+}
+
+test "Table.find returns entries added by Table.insert in reverse order" {
+    const fpath = try assert.randomTemporaryFilePath(std.testing.allocator);
+    defer std.testing.allocator.free(fpath);
+
+    var table = try Table.init(std.testing.allocator, fpath, 256, 1024, 512);
+    defer table.deinit() catch unreachable;
+
+    var test_state = try TableTestState.init(std.testing.allocator, 10000, 256);
+    defer test_state.deinit();
+
+    var id: u64 = test_state.entries.len;
+    while (id > 0) : (id -= 1) {
+        try table.insert(id - 1, test_state.entries[id - 1]);
+    }
+    // try std.testing.expectEqual(test_state.entries.len, table.count());
 
     var cursor = try table.find(0, 0);
     for (test_state.entries) |entry| {

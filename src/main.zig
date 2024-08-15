@@ -1,5 +1,6 @@
 const std = @import("std");
-const squeal_vm = @import("vm.zig");
+const cli = @import("cli.zig");
+const squeal = @import("squeal.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -7,17 +8,14 @@ pub fn main() !void {
 
     var istream = std.io.StreamSource{ .file = std.io.getStdIn() };
     var ostream = std.io.StreamSource{ .file = std.io.getStdOut() };
-    const stream = squeal_vm.Stream{ .reader = istream.reader(), .writer = ostream.writer() };
+    const stream = cli.Stream{ .reader = istream.reader(), .writer = ostream.writer() };
 
-    var pager = try squeal_vm.Table.Pager.init(gpa.allocator(), "./db.squeal");
-    defer pager.deinit();
-
-    var table = try squeal_vm.Table.init(&pager);
+    var table = try squeal.Table.init(gpa.allocator(), "./db.squeal", @sizeOf(squeal.Row), 4096, 512);
     defer table.deinit() catch |err| {
         std.log.err("couldn't deinitialize the table: {!}", .{err});
     };
 
-    var vm = try squeal_vm.Vm.init(gpa.allocator(), &stream, &table);
+    var vm = try cli.Vm.init(gpa.allocator(), &stream, &table);
     try vm.run();
 }
 
